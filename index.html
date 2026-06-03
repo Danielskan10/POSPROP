@@ -1475,28 +1475,32 @@ function h2r(hex){
 }
 
 // ─── KPI HTML ─────────────────────────────────────────────────
-const KPI_ICONS={
-  'Valor de Mercado':'<path d="M12 2L2 7l10 5 10-5-10-5zM2 17l10 5 10-5M2 12l10 5 10-5"/>',
-  'P&L del Día':'<polyline points="22,12 18,12 15,21 9,3 6,12 2,12"/>',
-  'Causación Mercado':'<line x1="12" y1="20" x2="12" y2="10"/><line x1="18" y1="20" x2="18" y2="4"/><line x1="6" y1="20" x2="6" y2="16"/>',
-  'TIR Ponderada':'<circle cx="12" cy="12" r="10"/><polyline points="12,6 12,12 16,14"/>',
-  'P&L Acumulado':'<polyline points="22,7 13.5,15.5 8.5,10.5 2,17"/><polyline points="16,7 22,7 22,13"/>',
-  'Posiciones':'<rect x="2" y="3" width="20" height="14" rx="2" ry="2"/><line x1="8" y1="21" x2="16" y2="21"/><line x1="12" y1="17" x2="12" y2="21"/>',
-  'Causación TIR':'<path d="M18 20V10"/><path d="M12 20V4"/><path d="M6 20v-6"/>',
-  'Causación FX':'<line x1="12" y1="1" x2="12" y2="23"/><path d="M17 5H9.5a3.5 3.5 0 000 7h5a3.5 3.5 0 010 7H6"/>',
-  'Causación Tasa':'<path d="M2.5 2v6h6M2.66 15.57a10 10 0 1 0 .57-8.38"/>',
-  'Exp. FX':'<circle cx="12" cy="12" r="10"/><line x1="2" y1="12" x2="22" y2="12"/><path d="M12 2a15.3 15.3 0 010 20M12 2a15.3 15.3 0 000 20"/>',
-};
+// Iconos SVG para KPIs — claves normalizadas sin caracteres especiales
+// (las claves con &, tildes, etc. causaban error de parseo en HTML)
+const KPI_ICONS_SVG = [
+  'M12 2L2 7l10 5 10-5-10-5zM2 17l10 5 10-5M2 12l10 5 10-5',
+  'M22 12h-4l-3 9L9 3l-3 9H2',
+  'M12 20V10 M18 20V4 M6 20v-4',
+  'M12 2a10 10 0 110 20A10 10 0 0112 2zM12 6v6l4 2',
+  'M22 7l-8.5 8.5-5-5L2 17 M16 7h6v6',
+  'M2 3h20v14H2z M8 21h8 M12 17v4',
+  'M18 20V10 M12 20V4 M6 20v-6',
+  'M12 1v22 M17 5H9.5a3.5 3.5 0 000 7h5a3.5 3.5 0 010 7H6',
+  'M2.5 2v6h6M2.66 15.57a10 10 0 100 .86',
+  'M12 2a10 10 0 110 20 M2 12h20',
+];
+
 function kH(label,val,delta,signN,color,sub){
-  const dc=delta!=null?`<div class="kd ${signN>0?'pos':signN<0?'neg':'neu'}">${signN>0?'↑':signN<0?'↓':'→'} ${delta}</div>`:'';
+  const dc=delta!=null?`<div class="kd ${signN>0?'pos':signN<0?'neg':'neu'}">${signN>0?'+':signN<0?'-':'~'} ${delta}</div>`:'';
   const vc=signN!=null?(signN>0?'pos':signN<0?'neg':''):'';
-  const ico=KPI_ICONS[label]||'<circle cx="12" cy="12" r="10"/>';
-  const rgb=color.startsWith('#')?h2r(color):color;
+  // Seleccionar icono por hash simple del label
+  const icoIdx=label.split('').reduce((a,c)=>a+c.charCodeAt(0),0)%KPI_ICONS_SVG.length;
+  const icoPath=KPI_ICONS_SVG[icoIdx];
   return`<div class="kpi">
     <div class="ka" style="background:linear-gradient(180deg,${color},${color}88)"></div>
     <div class="kpi-bg" style="background:${color}"></div>
     <div class="kl">
-      <svg viewBox="0 0 24 24" style="stroke:${color}">${ico}</svg>
+      <svg viewBox="0 0 24 24" style="stroke:${color};fill:none;stroke-width:2;stroke-linecap:round;stroke-linejoin:round"><path d="${icoPath}"/></svg>
       ${label}
     </div>
     <div class="kv ${vc}">${val}</div>
@@ -3118,32 +3122,51 @@ async function startApp(D_data){
   S.tab=startTab;
   S.init[startTab]=true;
   setLoad('Renderizando…', 95);
-  initTab(startTab);
+  try{
+    initTab(startTab);
+  } catch(e){
+    console.error('initTab error:',e);
+    // No bloquear la carga aunque falle un tab
+  }
 
-  // Ocultar loading
+  // Siempre ocultar el loading (aunque haya errores en el tab)
   setLoad('Listo', 100);
-  setTimeout(()=>{
-    const ls=document.getElementById('loadScreen');
-    if(ls){ ls.style.opacity='0'; ls.style.transition='opacity .3s';
-      setTimeout(()=>ls.remove(),350); }
-  },200);
+  const _ls=document.getElementById('loadScreen');
+  if(_ls){ _ls.style.opacity='0'; _ls.style.transition='opacity .4s';
+    setTimeout(()=>{_ls.remove();},450); }
 }
 
 window.addEventListener('DOMContentLoaded', async ()=>{
-  // Aplicar tema antes de cargar para evitar flash
   const savedTheme=localStorage.getItem('sk-theme')||'dark';
   document.documentElement.setAttribute('data-theme',savedTheme);
+
+  // Siempre ocultar loading después de un máximo de 8 segundos
+  const _failsafe=setTimeout(()=>{
+    const ls=document.getElementById('loadScreen');
+    if(ls){ ls.style.opacity='0'; ls.style.transition='opacity .4s';
+      setTimeout(()=>ls.remove(),450); }
+  }, 8000);
 
   try{
     setLoad('Cargando datos…', 20);
     const data = await loadData();
-    if(!data) throw new Error('Datos vacíos');
+    if(!data) throw new Error('No se encontraron datos. Ejecuta procesar_datos.py primero.');
     setLoad('Datos listos', 80);
+    clearTimeout(_failsafe);
     await startApp(data);
   } catch(e){
-    document.getElementById('loadMsg').textContent='Error: '+e.message;
-    document.getElementById('loadBar').style.background='#ef4444';
+    clearTimeout(_failsafe);
+    const msg=document.getElementById('loadMsg');
+    const bar=document.getElementById('loadBar');
+    if(msg) msg.textContent='Error: '+e.message;
+    if(bar) bar.style.background='#ef4444';
     console.error('Dashboard error:',e);
+    // Mostrar el error por 5 segundos y luego intentar mostrar la página igual
+    setTimeout(()=>{
+      const ls=document.getElementById('loadScreen');
+      if(ls){ ls.style.opacity='0'; ls.style.transition='opacity .4s';
+        setTimeout(()=>ls.remove(),450); }
+    }, 5000);
   }
 });
 </script>
