@@ -464,9 +464,12 @@ tfoot td{font-weight:700;border-top:2px solid var(--bd2);background:var(--s2)}
 
 <script>
 // ─── MODO DE CARGA ────────────────────────────────────────────
-const __MODO_REMOTO = __MODO_REMOTO__;   // reemplazado por Python
-const __DATA_URL    = '__DATA_URL__';     // reemplazado por Python
-const __DATA_INLINE = __DATA_JSON__;      // null en modo remoto
+const __MODO_REMOTO = __MODO_REMOTO__;   // reemplazado por Python: true | false
+const __DATA_URL    = '__DATA_URL__';     // reemplazado por Python: './data.json' | ''
+const __DATA_INLINE = __DATA_JSON__;      // reemplazado por Python: null | {...}
+
+// true si se abre desde file:// (doble click en el archivo)
+const __IS_LOCAL = location.protocol === 'file:';
 
 function setLoad(msg, pct){
   const m=document.getElementById('loadMsg');
@@ -476,21 +479,38 @@ function setLoad(msg, pct){
 }
 
 async function loadData(){
+  // Si hay datos inline (modo offline o fallback) y estamos en local → usar inline
+  if(__DATA_INLINE !== null && __IS_LOCAL){
+    setLoad('Cargando datos locales…', 80);
+    return __DATA_INLINE;
+  }
+
+  // Modo remoto: fetch desde GitHub Pages (o cualquier servidor HTTP)
   if(__MODO_REMOTO && __DATA_URL){
-    setLoad('Descargando datos desde GitHub…', 30);
+    setLoad('Descargando datos…', 30);
     try{
       const r = await fetch(__DATA_URL + '?t=' + Date.now());
       if(!r.ok) throw new Error('HTTP ' + r.status);
       setLoad('Procesando JSON…', 70);
       return await r.json();
     } catch(e){
-      setLoad('Error: ' + e.message, 100);
+      // Fallback a inline si existe
+      if(__DATA_INLINE !== null){
+        setLoad('Usando datos locales…', 75);
+        return __DATA_INLINE;
+      }
+      setLoad('Error al cargar datos: ' + e.message, 100);
       throw e;
     }
   }
-  // modo inline
-  setLoad('Datos inline listos', 80);
-  return __DATA_INLINE;
+
+  // Modo inline puro
+  if(__DATA_INLINE !== null){
+    setLoad('Datos listos', 80);
+    return __DATA_INLINE;
+  }
+
+  throw new Error('No hay datos disponibles. Ejecuta procesar_datos.py primero.');
 }
 </script>
 

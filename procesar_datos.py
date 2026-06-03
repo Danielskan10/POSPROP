@@ -1069,19 +1069,24 @@ def main():
     with open(tpl_path, "r", encoding="utf-8") as f:
         tpl = f.read()
 
+    # ── Modo HÍBRIDO (siempre) ─────────────────────────────────────
+    # El index.html siempre lleva:
+    #   - datos inline  → para abrir el archivo localmente (doble click)
+    #   - __DATA_URL__  → para que en GitHub Pages haga fetch('./data.json')
+    # El JS detecta automáticamente si está en file:// o en http:// y
+    # elige la fuente correcta, sin que el usuario configure nada.
+    data_str = json.dumps(data_pub, ensure_ascii=False,
+                          separators=(",",":"), default=str)
     if gh_user:
-        # ── Modo REMOTO (GitHub Pages) ────────────────────────────
-        # index.html hace fetch("./data.json") — mismo dominio, sin CORS
+        # Con GitHub: fetch remoto + datos inline como fallback local
         html = (tpl
-            .replace("__DATA_JSON__", "null")
-            .replace("__DATA_URL__",  "./data.json")   # URL relativa
+            .replace("__DATA_JSON__", data_str)    # inline para uso local
+            .replace("__DATA_URL__",  "./data.json")
             .replace("__ORG__",       CFG["org"])
             .replace("__MODO_REMOTO__", "true"))
-        modo_txt = f"REMOTO  →  fetch('./data.json') en GitHub Pages"
+        modo_txt = "HIBRIDO  (local=inline, GitHub Pages=fetch)"
     else:
-        # ── Modo INLINE (sin GitHub) ──────────────────────────────
-        data_str = json.dumps(data_pub, ensure_ascii=False,
-                              separators=(",",":"), default=str)
+        # Sin GitHub: solo inline
         html = (tpl
             .replace("__DATA_JSON__", data_str)
             .replace("__DATA_URL__",  "")
