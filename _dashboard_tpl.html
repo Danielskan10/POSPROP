@@ -393,6 +393,27 @@ tfoot td{font-weight:700;border-top:2px solid var(--bd2);background:var(--s2)}
 .modal-footer{padding:16px 28px;border-top:1px solid var(--bd);
   display:flex;justify-content:flex-end;gap:10px;flex-shrink:0;background:var(--s1)}
 
+/* ═══ MAP EDITOR ════════════════════════════════════════════ */
+.map-editor{display:flex;flex-direction:column;gap:4px;max-height:260px;
+  overflow-y:auto;padding-right:4px}
+.map-row{display:grid;grid-template-columns:1fr 1.4fr auto;gap:6px;align-items:center}
+.map-row input{font-size:11.5px;padding:5px 9px;border-radius:6px;
+  background:var(--s2);color:var(--tx);border:1px solid var(--bd);
+  transition:border-color var(--trans)}
+.map-row input:focus{border-color:var(--g);outline:none;box-shadow:0 0 0 2px rgba(0,133,74,.1)}
+.map-row input.key-input{font-family:var(--mono);color:var(--b)}
+.map-del{width:26px;height:26px;border-radius:5px;display:grid;place-items:center;
+  color:var(--tx3);border:1px solid transparent;transition:all var(--trans);flex-shrink:0;cursor:pointer}
+.map-del:hover{color:var(--r);border-color:var(--r);background:var(--r3)}
+.map-hdr{display:grid;grid-template-columns:1fr 1.4fr auto;gap:6px;
+  font-size:9px;color:var(--tx3);text-transform:uppercase;letter-spacing:.6px;
+  padding:0 0 4px;border-bottom:1px solid var(--bd);margin-bottom:4px}
+/* reglas de clasificación */
+.regla-row{display:grid;grid-template-columns:1fr 1fr 1fr auto;gap:6px;align-items:center}
+.regla-row input{font-size:11.5px;padding:5px 9px;border-radius:6px;
+  background:var(--s2);color:var(--tx);border:1px solid var(--bd)}
+.regla-row input:focus{border-color:var(--g);outline:none}
+
 /* ═══ LOADING SKELETON ════════════════════════════════════════ */
 @keyframes shimmer{0%{background-position:-400px 0}100%{background-position:400px 0}}
 .skel{background:linear-gradient(90deg,var(--s2) 25%,var(--s3) 50%,var(--s2) 75%);
@@ -512,10 +533,24 @@ function saveUICfg(obj){ localStorage.setItem(CFG_UI_KEY, JSON.stringify(obj)); 
 let UI_CFG = loadUICfg();
 
 function applyTipoMap(rows){
+  // TIPO_MAP viene del tab "Tipos de activo" + overrides del tab "Mapas"
+  const ov = loadMapasOverride();
+  const combined = {...TIPO_MAP, ...(ov.tipo_map||{})};
   return rows.map(r=>{
-    const override = TIPO_MAP[r.esp];
+    const override = combined[r.esp];
     return override ? {...r, tipo: override} : r;
   });
+}
+
+// Devuelve el nombre legible de un portafolio usando los mapas del usuario
+function portNom(cod){
+  const m = getMapas();
+  return m.ports[cod] || cod || '—';
+}
+// Devuelve nombre de moneda usando los mapas del usuario
+function monNom(cod){
+  const m = getMapas();
+  return m.monedas[cod] || cod || '—';
 }
 </script>
 
@@ -948,7 +983,8 @@ function applyTipoMap(rows){
 
     <!-- Sub-tabs del modal -->
     <div class="modal-ftabs">
-      <div class="modal-ftab on" data-fp="fp-tipos" onclick="setCfgTab(this)">Tipos de activo</div>
+      <div class="modal-ftab on" data-fp="fp-tipos"  onclick="setCfgTab(this)">Tipos de activo</div>
+      <div class="modal-ftab" data-fp="fp-mapas"   onclick="setCfgTab(this)">Portafolios & Mapas</div>
       <div class="modal-ftab" data-fp="fp-visual"  onclick="setCfgTab(this)">Visual</div>
       <div class="modal-ftab" data-fp="fp-datos"   onclick="setCfgTab(this)">Datos & exportar</div>
       <div class="modal-ftab" data-fp="fp-info"    onclick="setCfgTab(this)">Información</div>
@@ -982,6 +1018,93 @@ function applyTipoMap(rows){
             <span class="bdg b-oth">Titularizaciones</span><span class="bdg b-oth">Otro</span>
           </div>
         </div>
+      </div>
+
+      <!-- Panel: Portafolios & Mapas -->
+      <div class="modal-fpanel" id="fp-mapas">
+
+        <div class="cfg-info" style="margin-bottom:18px">
+          Edita los nombres y códigos que usa el sistema fuente.
+          Los cambios se guardan en el navegador y se aplican inmediatamente al dashboard.<br>
+          Para que queden permanentes en los datos, usa <b>Exportar config para Python</b>
+          y pega el bloque en la sección <code>CFG</code> de <b>procesar_datos.py</b>.
+        </div>
+
+        <!-- Portafolios -->
+        <div class="cfg-section">
+          <div class="cfg-title">
+            <svg viewBox="0 0 24 24"><rect x="2" y="7" width="20" height="14" rx="2"/><path d="M16 7V5a2 2 0 00-2-2h-4a2 2 0 00-2 2v2"/></svg>
+            Portafolios — código → nombre
+            <span style="margin-left:auto;font-size:10px;color:var(--tx3);font-weight:400;text-transform:none;letter-spacing:0">
+              Código = parte del campo "Por" antes del guión (ej: "21-F" → "21")
+            </span>
+          </div>
+          <div id="map-ports" class="map-editor"></div>
+          <button onclick="addMapRow('map-ports')" class="btn-sm" style="margin-top:8px;color:var(--g);border-color:var(--g)">+ Agregar portafolio</button>
+        </div>
+
+        <!-- Tipos de activo (código) -->
+        <div class="cfg-section">
+          <div class="cfg-title">
+            <svg viewBox="0 0 24 24"><polyline points="22,12 18,12 15,21 9,3 6,12 2,12"/></svg>
+            Tipo de activo — código → nombre
+            <span style="margin-left:auto;font-size:10px;color:var(--tx3);font-weight:400;text-transform:none;letter-spacing:0">
+              Código = parte después del guión en "Por" (ej: "21-F" → "F")
+            </span>
+          </div>
+          <div id="map-activos" class="map-editor"></div>
+          <button onclick="addMapRow('map-activos')" class="btn-sm" style="margin-top:8px;color:var(--g);border-color:var(--g)">+ Agregar tipo</button>
+        </div>
+
+        <!-- Reglas de clasificación de instrumento -->
+        <div class="cfg-section">
+          <div class="cfg-title">
+            <svg viewBox="0 0 24 24"><path d="M12 2L2 7l10 5 10-5-10-5zM2 17l10 5 10-5M2 12l10 5 10-5"/></svg>
+            Reglas de clasificación de instrumentos
+            <span style="margin-left:auto;font-size:10px;color:var(--tx3);font-weight:400;text-transform:none;letter-spacing:0">
+              Si el nombre de la especie contiene el texto → se clasifica en ese tipo
+            </span>
+          </div>
+          <div id="map-reglas" class="map-editor"></div>
+          <button onclick="addReglaRow()" class="btn-sm" style="margin-top:8px;color:var(--g);border-color:var(--g)">+ Agregar regla</button>
+        </div>
+
+        <!-- Monedas -->
+        <div class="cfg-section">
+          <div class="cfg-title">
+            <svg viewBox="0 0 24 24"><line x1="12" y1="1" x2="12" y2="23"/><path d="M17 5H9.5a3.5 3.5 0 000 7h5a3.5 3.5 0 010 7H6"/></svg>
+            Monedas — código sistema → nombre legible
+          </div>
+          <div id="map-monedas" class="map-editor"></div>
+          <button onclick="addMapRow('map-monedas')" class="btn-sm" style="margin-top:8px;color:var(--g);border-color:var(--g)">+ Agregar moneda</button>
+        </div>
+
+        <!-- Modalidades / Estados / Métodos en fila -->
+        <div class="g3" style="gap:16px">
+          <div class="cfg-section" style="margin-bottom:0">
+            <div class="cfg-title" style="font-size:10px">Modalidades</div>
+            <div id="map-modalidades" class="map-editor"></div>
+            <button onclick="addMapRow('map-modalidades')" class="btn-sm" style="margin-top:6px;font-size:10px;color:var(--g);border-color:var(--g)">+</button>
+          </div>
+          <div class="cfg-section" style="margin-bottom:0">
+            <div class="cfg-title" style="font-size:10px">Estados</div>
+            <div id="map-estados" class="map-editor"></div>
+            <button onclick="addMapRow('map-estados')" class="btn-sm" style="margin-top:6px;font-size:10px;color:var(--g);border-color:var(--g)">+</button>
+          </div>
+          <div class="cfg-section" style="margin-bottom:0">
+            <div class="cfg-title" style="font-size:10px">Métodos de valoración</div>
+            <div id="map-metodos" class="map-editor"></div>
+            <button onclick="addMapRow('map-metodos')" class="btn-sm" style="margin-top:6px;font-size:10px;color:var(--g);border-color:var(--g)">+</button>
+          </div>
+        </div>
+
+        <div style="margin-top:18px">
+          <button class="btn-sm" onclick="exportCfgPython()" style="color:var(--b);border-color:var(--b)">
+            <svg viewBox="0 0 24 24" style="width:12px;height:12px;stroke:currentColor;fill:none;stroke-width:2"><path d="M21 15v4a2 2 0 01-2 2H5a2 2 0 01-2-2v-4"/><polyline points="7,10 12,15 17,10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
+            Exportar config para Python (procesar_datos.py)
+          </button>
+        </div>
+
       </div>
 
       <!-- Panel: Visual -->
@@ -2086,6 +2209,194 @@ async function exportPDF(){
   }catch(e){alert('Error al exportar PDF: '+e.message);}
 }
 
+// ════════════════════════════════════════════════════════════
+// GESTIÓN DE MAPAS EDITABLES
+// ════════════════════════════════════════════════════════════
+const MAPAS_KEY = 'sk_mapas_override';
+
+function loadMapasOverride(){
+  try{ return JSON.parse(localStorage.getItem(MAPAS_KEY))||{}; }
+  catch{ return {}; }
+}
+function saveMapasOverride(obj){ localStorage.setItem(MAPAS_KEY, JSON.stringify(obj)); }
+
+// Devuelve los mapas efectivos (data.json + overrides del usuario)
+function getMapas(){
+  const base = D.mapas || {};
+  const ov   = loadMapasOverride();
+  return {
+    ports:       {...(base.ports||{}),       ...(ov.ports||{})},
+    activos:     {...(base.activos||{}),     ...(ov.activos||{})},
+    monedas:     {...(base.monedas||{}),     ...(ov.monedas||{})},
+    modalidades: {...(base.modalidades||{}), ...(ov.modalidades||{})},
+    estados:     {...(base.estados||{}),     ...(ov.estados||{})},
+    metodos:     {...(base.metodos||{}),     ...(ov.metodos||{})},
+    tipo_reglas: ov.tipo_reglas || base.tipo_reglas || [],
+    tipo_colores:{...(base.tipo_colores||{}), ...(ov.tipo_colores||{})},
+    tipo_map:    {...(base.tipo_map||{}),    ...(ov.tipo_map||{})},
+  };
+}
+
+// Renderiza un editor de mapa clave→valor dentro de un contenedor
+function renderMapEditor(containerId, mapObj, keysReadonly=false){
+  const cont = document.getElementById(containerId);
+  if(!cont) return;
+  cont.innerHTML = `<div class="map-hdr"><span>Código</span><span>Nombre legible</span><span></span></div>` +
+    Object.entries(mapObj).map(([k,v])=>`
+      <div class="map-row" data-container="${containerId}">
+        <input class="key-input" value="${esc(k)}" placeholder="Código"
+          ${keysReadonly?'readonly style="opacity:.6"':''}>
+        <input class="val-input" value="${esc(v)}" placeholder="Nombre legible">
+        <button class="map-del" onclick="this.closest('.map-row').remove()" title="Eliminar">×</button>
+      </div>`).join('');
+}
+
+// Renderiza las reglas de clasificación
+function renderReglasEditor(reglas){
+  const cont = document.getElementById('map-reglas');
+  if(!cont) return;
+  const tipos = Object.keys((D.mapas?.tipo_colores)||TC);
+  cont.innerHTML = `
+    <div style="display:grid;grid-template-columns:1fr 1fr 1fr auto;gap:6px;
+      font-size:9px;color:var(--tx3);text-transform:uppercase;letter-spacing:.6px;
+      padding:0 0 4px;border-bottom:1px solid var(--bd);margin-bottom:4px">
+      <span>Texto a buscar (separar con coma)</span>
+      <span>Tipo resultado</span>
+      <span>Orden</span>
+      <span></span>
+    </div>` +
+    (reglas||[]).map((r,i)=>`
+      <div class="regla-row" data-i="${i}">
+        <input value="${esc((r.contiene||[]).join(', '))}" placeholder="TES, BONO, ...">
+        <select style="font-size:11.5px;padding:5px 9px;border-radius:6px;background:var(--s2);color:var(--tx);border:1px solid var(--bd)">
+          ${tipos.map(t=>`<option${t===r.tipo?' selected':''}>${esc(t)}</option>`).join('')}
+          <option${r.tipo==='Otro'?' selected':''}>Otro</option>
+        </select>
+        <input type="number" value="${i+1}" min="1" style="width:60px;text-align:center">
+        <button class="map-del" onclick="this.closest('.regla-row').remove()" title="Eliminar">×</button>
+      </div>`).join('');
+}
+
+function addMapRow(containerId){
+  const cont = document.getElementById(containerId);
+  if(!cont) return;
+  const row = document.createElement('div');
+  row.className = 'map-row';
+  row.dataset.container = containerId;
+  row.innerHTML = `
+    <input class="key-input" value="" placeholder="Código">
+    <input class="val-input" value="" placeholder="Nombre legible">
+    <button class="map-del" onclick="this.closest('.map-row').remove()" title="Eliminar">×</button>`;
+  cont.appendChild(row);
+  row.querySelector('.key-input').focus();
+}
+
+function addReglaRow(){
+  const cont = document.getElementById('map-reglas');
+  if(!cont) return;
+  const tipos = Object.keys((D.mapas?.tipo_colores)||TC);
+  const row = document.createElement('div');
+  row.className = 'regla-row';
+  row.innerHTML = `
+    <input value="" placeholder="TES, BONO, ...">
+    <select style="font-size:11.5px;padding:5px 9px;border-radius:6px;background:var(--s2);color:var(--tx);border:1px solid var(--bd)">
+      ${tipos.map(t=>`<option>${esc(t)}</option>`).join('')}
+      <option>Otro</option>
+    </select>
+    <input type="number" value="${cont.querySelectorAll('.regla-row').length+1}" min="1" style="width:60px;text-align:center">
+    <button class="map-del" onclick="this.closest('.regla-row').remove()" title="Eliminar">×</button>`;
+  cont.appendChild(row);
+  row.querySelector('input').focus();
+}
+
+// Lee todos los editores y devuelve el objeto de mapas actualizado
+function readMapasFromDOM(){
+  const readMap = (containerId) => {
+    const rows = document.querySelectorAll(`#${containerId} .map-row`);
+    const obj = {};
+    rows.forEach(row => {
+      const k = row.querySelector('.key-input')?.value.trim();
+      const v = row.querySelector('.val-input')?.value.trim();
+      if(k && v) obj[k] = v;
+    });
+    return obj;
+  };
+
+  const reglas = [];
+  document.querySelectorAll('#map-reglas .regla-row').forEach(row => {
+    const inputs = row.querySelectorAll('input');
+    const sel    = row.querySelector('select');
+    const texto  = inputs[0]?.value.trim();
+    const tipo   = sel?.value.trim();
+    if(texto && tipo){
+      reglas.push({
+        contiene: texto.split(',').map(x=>x.trim()).filter(Boolean),
+        tipo
+      });
+    }
+  });
+
+  return {
+    ports:       readMap('map-ports'),
+    activos:     readMap('map-activos'),
+    monedas:     readMap('map-monedas'),
+    modalidades: readMap('map-modalidades'),
+    estados:     readMap('map-estados'),
+    metodos:     readMap('map-metodos'),
+    tipo_reglas: reglas,
+  };
+}
+
+// Rellena el panel de mapas con los valores actuales
+function renderPanelMapas(){
+  const m = getMapas();
+  renderMapEditor('map-ports',       m.ports);
+  renderMapEditor('map-activos',     m.activos);
+  renderMapEditor('map-monedas',     m.monedas);
+  renderMapEditor('map-modalidades', m.modalidades);
+  renderMapEditor('map-estados',     m.estados);
+  renderMapEditor('map-metodos',     m.metodos);
+  renderReglasEditor(m.tipo_reglas);
+}
+
+// Escapa HTML básico para atributos value
+function esc(s){ return String(s).replace(/&/g,'&amp;').replace(/"/g,'&quot;').replace(/</g,'&lt;'); }
+
+// Genera el bloque Python para pegar en CFG
+function exportCfgPython(){
+  const m = readMapasFromDOM();
+  const ov = loadMapasOverride();
+  const tipoMap = {...(D.mapas?.tipo_map||{}), ...(ov.tipo_map||{})};
+  // Construir bloque Python
+  const toDict = (obj, indent='        ') =>
+    '{\n' + Object.entries(obj).map(([k,v])=>`${indent}"${k}": "${v}",`).join('\n') + `\n${indent.slice(4)}}`;
+  const toList = (arr, indent='        ') =>
+    '[\n' + arr.map(r=>`${indent}{"contiene": ${JSON.stringify(r.contiene)}, "tipo": "${r.tipo}"},`).join('\n') + `\n${indent.slice(4)}]`;
+
+  const bloque = `
+# ════ PEGAR ESTO EN CFG (procesar_datos.py) ════
+    "ports":       ${toDict(m.ports)},
+    "activos":     ${toDict(m.activos)},
+    "monedas":     ${toDict(m.monedas)},
+    "modalidades": ${toDict(m.modalidades)},
+    "estados":     ${toDict(m.estados)},
+    "metodos":     ${toDict(m.metodos)},
+    "tipo_reglas": ${toList(m.tipo_reglas)},
+    "tipo_map":    ${toDict(tipoMap)},
+# ════════════════════════════════════════════════
+`.trim();
+
+  // Copiar al clipboard y mostrar
+  navigator.clipboard?.writeText(bloque).catch(()=>{});
+  const pre = document.createElement('pre');
+  pre.style.cssText='background:var(--s2);padding:12px 14px;border-radius:8px;font-size:10px;overflow-x:auto;white-space:pre-wrap;margin-top:12px;border:1px solid var(--bd)';
+  pre.textContent = bloque;
+  const btn = document.querySelector('#fp-mapas button[onclick="exportCfgPython()"]');
+  const existing = btn?.parentElement?.querySelector('pre');
+  if(existing) existing.remove();
+  btn?.insertAdjacentElement('afterend', pre);
+}
+
 // renderCfgRows y addCfgRow (usados desde el nuevo modal)
 function renderCfgRows(){
   const tipos=['TES','Fondos','Liquidez','Derivados','AOR','TIDIS','CDT','Acciones','Titularizaciones','Otro'];
@@ -2289,27 +2600,30 @@ function setCfgTab(el){
 
 function openCfg(){
   renderCfgRows();
-  // Llenar panel visual con valores actuales
+  renderPanelMapas();   // ← panel de mapas editables
+
+  // Panel visual
   const u=UI_CFG;
   const _s=(id,val)=>{const el=document.getElementById(id);if(el)el.value=val;};
   const _c=(id,val)=>{const el=document.getElementById(id);if(el)el.checked=val;};
-  _s('ui-theme',      S.theme);
-  _s('ui-tabDefault', u.tabDefault);
-  _s('ui-insightsPos',u.insightsPos);
-  _s('ui-decimalPct', String(u.decimalPct));
+  _s('ui-theme',        S.theme);
+  _s('ui-tabDefault',   u.tabDefault);
+  _s('ui-insightsPos',  u.insightsPos);
+  _s('ui-decimalPct',   String(u.decimalPct));
   _s('ui-tablePageSize',String(u.tablePageSize));
-  _s('ui-exportFormat',u.exportFormat);
-  _c('ui-chartAnim',  u.chartAnim);
-  _c('ui-showNominal',u.showNominal);
-  _c('ui-compactKpis',u.compactKpis);
-  // Llenar panel info
+  _s('ui-exportFormat', u.exportFormat);
+  _c('ui-chartAnim',    u.chartAnim);
+  _c('ui-showNominal',  u.showNominal);
+  _c('ui-compactKpis',  u.compactKpis);
+
+  // Panel info
   const meta=D.meta||{};
   document.getElementById('cfgInfoMeta').innerHTML=[
-    ['Organización', meta.org||'—'],
-    ['Último día',   meta.ultimo_dia||'—'],
-    ['Primer día',   meta.primer_dia||'—'],
+    ['Organización',   meta.org||'—'],
+    ['Último día',     meta.ultimo_dia||'—'],
+    ['Primer día',     meta.primer_dia||'—'],
     ['Fechas totales', meta.n_fechas||'—'],
-    ['Generado',     meta.generado||'—'],
+    ['Generado',       meta.generado||'—'],
   ].map(([l,v])=>`<div style="display:flex;justify-content:space-between;font-size:12px;
     padding:6px 10px;background:var(--s2);border-radius:6px">
     <span style="color:var(--tx2)">${l}</span>
@@ -2317,7 +2631,7 @@ function openCfg(){
   const dataUrl=meta.data_url||'';
   document.getElementById('cfgInfoData').innerHTML=
     dataUrl
-      ? `Modo <b>remoto</b> — datos cargados desde:<br><a href="${dataUrl}" target="_blank" style="color:var(--b);word-break:break-all">${dataUrl}</a>`
+      ? `Modo <b>remoto</b> — datos desde:<br><a href="${dataUrl}" target="_blank" style="color:var(--b);word-break:break-all">${dataUrl}</a>`
       : 'Modo <b>inline</b> — datos incrustados en el HTML.';
   document.getElementById('cfgOverlay').classList.add('on');
 }
@@ -2326,7 +2640,7 @@ function closeCfg(){ document.getElementById('cfgOverlay').classList.remove('on'
 function closeCfgOut(e){ if(e.target===document.getElementById('cfgOverlay')) closeCfg(); }
 
 function saveCfgModal(){
-  // Guardar mapa de tipos
+  // 1. Mapa de reclasificación de especies (Tab "Tipos de activo")
   const newMap={};
   document.querySelectorAll('#cfgRows .cfg-row').forEach(row=>{
     const selects=row.querySelectorAll('select');
@@ -2338,7 +2652,12 @@ function saveCfgModal(){
   saveCfg(newMap);
   TIPO_MAP=newMap;
 
-  // Guardar config UI
+  // 2. Mapas editables (Tab "Portafolios & Mapas")
+  const mapasNuevos = readMapasFromDOM();
+  mapasNuevos.tipo_map = newMap;   // sincronizar con tab de tipos
+  saveMapasOverride(mapasNuevos);
+
+  // 3. Config UI (Tab "Visual")
   const _gv=(id,def='')=>{ const el=document.getElementById(id); return el?el.value:def; };
   const _gc2=(id)=>{ const el=document.getElementById(id); return el?el.checked:false; };
   const newUI={
@@ -2358,17 +2677,13 @@ function saveCfgModal(){
   // Aplicar tema si cambió
   if(newUI.theme !== S.theme){
     S.theme=newUI.theme; applyTheme();
-    Object.values(CH).forEach(c=>c&&c.destroy());
-    Object.keys(CH).forEach(k=>delete CH[k]);
-    Object.keys(S.init).forEach(k=>delete S.init[k]);
   }
-
-  // Aplicar KPIs compactos
   document.querySelectorAll('.kpi').forEach(el=>{
     el.style.padding=newUI.compactKpis?'10px 13px':'16px 18px';
   });
 
   closeCfg();
+  // Reconstruir tab actual con los nuevos mapas
   Object.values(CH).forEach(c=>c&&c.destroy());
   Object.keys(CH).forEach(k=>delete CH[k]);
   Object.keys(S.init).forEach(k=>delete S.init[k]);
@@ -2379,6 +2694,7 @@ function resetAllCfg(){
   if(!confirm('¿Restablecer toda la configuración al valor por defecto?')) return;
   localStorage.removeItem('sk_tipo_map');
   localStorage.removeItem('sk_ui_cfg');
+  localStorage.removeItem('sk_mapas_override');
   TIPO_MAP=loadCfg(); UI_CFG=loadUICfg();
   closeCfg();
   location.reload();

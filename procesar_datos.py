@@ -21,38 +21,147 @@ warnings.filterwarnings("ignore")
 # │  ★  CONFIGURACIÓN — solo editar aquí                            │
 # └─────────────────────────────────────────────────────────────────┘
 CFG = {
-    # Carpeta raíz con CSV/XLSX (subcarpetas por mes detectadas auto)
+    # ── Rutas ────────────────────────────────────────────────────
     "carpeta_datos": r"C:\Users\danie\Sapienza\POSPRO",
-
-    # Archivos generados (se suben a GitHub Pages)
     "output_html":   r"C:\Users\danie\Sapienza\POSPRO\index.html",
     "output_json":   r"C:\Users\danie\Sapienza\POSPRO\data.json",
-
-    # Caché incremental {ruta_relativa: {hash, fecha_proceso}}
-    # Nunca se sube a GitHub (está en .gitignore)
     "cache_file":    r"C:\Users\danie\Sapienza\POSPRO\.cache_procesado.json",
 
-    # Git: commit + push automático
-    "git_push": True,
-    "git_msg":  "data: posiciones {fecha}",
-
-    # Rama de GitHub Pages (normalmente "main" o "gh-pages")
+    # ── Git ──────────────────────────────────────────────────────
+    "git_push":   True,
+    "git_msg":    "data: posiciones {fecha}",
     "git_branch": "main",
 
-    # Archivos que NO son datos fuente (ignorados al buscar XLSX)
+    # ── Identidad ────────────────────────────────────────────────
+    "org": "Skandia Colombia",
+    "sub": "Dashboard de Posiciones de Portafolio",
+
+    # ── Archivos ignorados al buscar datos fuente ────────────────
     "ignorar": {
         "posiciones_consolidadas.xlsx", "index.html",
         "dashboard.html", "data.json", "_dashboard_tpl.html",
     },
 
-    # Identidad del dashboard
-    "org":  "Skandia Colombia",
-    "sub":  "Dashboard de Posiciones de Portafolio",
+    # ════════════════════════════════════════════════════════════
+    #  MAPAS EDITABLES — se publican en data.json y el dashboard
+    #  los lee para mostrar nombres legibles. Puedes agregar,
+    #  quitar o renombrar cualquier entrada.
+    # ════════════════════════════════════════════════════════════
+
+    # Código portafolio (campo "Por" antes del guión) → nombre legible
+    "ports": {
+        "21": "Portafolio 21",
+        "41": "Portafolio 41",
+        "51": "Portafolio 51",
+        "HC": "HC Cesantías",
+        "HO": "HO Obligatorio",
+        "HE": "HE Especial",
+    },
+
+    # Código tipo de activo (campo "Por" después del guión) → nombre legible
+    "activos": {
+        "F":  "Renta Fija (TES)",
+        "H":  "Liquidez",
+        "E":  "Fondos Colectivos",
+        "O":  "Otros Títulos",
+        "D":  "Depósitos/Cash",
+        "Y":  "Fondos SPC",
+        "V":  "AOR",
+        "L":  "Acciones",
+        "G":  "Fondos",
+        "DF": "Derivados",
+        "T":  "TIDIS",
+        "DB": "Depósitos Banco",
+        "HB": "Liquidez HB",
+        "W":  "AOR Propios",
+        "P":  "Otros",
+    },
+
+    # Código moneda del sistema → nombre legible
+    "monedas": {
+        "COP":     "COP",
+        "USCOP":   "USD",
+        "EUO":     "EUR",
+        "UKCOP":   "GBP",
+        "ETQACOP": "Fdo ETQA",
+        "ETRACOP": "Fdo ETRA",
+        "ESJWX":   "Fdo Alt A",
+        "ESY0O":   "Fdo UnoMas",
+        "EIBMS":   "Fdo Efect A",
+        "EIEMS":   "Fdo Efect D",
+        "EABFR":   "Fdo Occirenta",
+        "ETGWX":   "Fdo Alt D",
+        "EDXR5":   "SPC Corto Plazo",
+        "EDY1U":   "SPC Largo Plazo",
+        "EDT1U":   "SPC Conservador",
+        "EDU1U":   "SPC Mayor Riesgo",
+        "EDSR6":   "SPC Moderado",
+        "EDV1U":   "SPC Retiro Programado",
+        "ESUMS":   "Fdo Umas",
+    },
+
+    # Código modalidad → descripción legible
+    "modalidades": {
+        "AV":  "Año Vencido",
+        "DV":  "Día Vencido",
+        "Dto": "Descuento",
+        "MV":  "Mes Vencido",
+        "TV":  "Trimestre Vencido",
+        "NAp": "No Aplica",
+    },
+
+    # Código estado → descripción legible
+    "estados": {
+        "Pend": "Pendiente",
+        "Reci": "En Cartera",
+        "Vend": "Vendido",
+        "Frac": "Fraccionado",
+    },
+
+    # Código método de valoración → descripción legible
+    "metodos": {
+        "QSI":   "Quantil (Fondos)",
+        "QES-SI":"Quantil Renta Fija",
+        "MC4-E": "Modelo Equity",
+        "MC1-I": "Modelo Interés",
+    },
+
+    # Reglas de clasificación por tipo de instrumento.
+    # Cada regla: {"contiene": ["texto"], "tipo": "TES"}
+    # Se evalúan en orden; la primera que coincide gana.
+    # El texto se compara en MAYÚSCULAS con el nombre de la especie.
+    "tipo_reglas": [
+        {"contiene": ["TES"],                              "tipo": "TES"},
+        {"contiene": ["CDT", "CREDITO", "CRÉDITO"],        "tipo": "CDT"},
+        {"contiene": ["CASH", "CTA AHO", "CTA AH", "CTA "],"tipo": "Liquidez"},
+        {"contiene": ["FIC", "FCPD", "FCPE", "FCP", "P SPC"],"tipo": "Fondos"},
+        {"contiene": ["DER.", "DERIV"],                    "tipo": "Derivados"},
+        {"contiene": ["AOR"],                              "tipo": "AOR"},
+        {"contiene": ["TIDIS"],                            "tipo": "TIDIS"},
+        {"contiene": ["TITULARIZ"],                        "tipo": "Titularizaciones"},
+        {"contiene": ["ACC."],                             "tipo": "Acciones"},
+    ],
+
+    # Colores de los tipos de instrumento en las gráficas
+    "tipo_colores": {
+        "TES":             "#3b82f6",
+        "Fondos":          "#00854A",
+        "Liquidez":        "#10b981",
+        "Derivados":       "#ef4444",
+        "AOR":             "#f59e0b",
+        "TIDIS":           "#8b5cf6",
+        "Titularizaciones":"#f97316",
+        "Acciones":        "#ec4899",
+        "CDT":             "#06b6d4",
+        "Otro":            "#6b7280",
+    },
+
+    # Reclasificación manual de especies específicas
+    # (se puede gestionar también desde el dashboard)
+    "tipo_map": {
+        # "Credito Bancolombia 365 $": "CDT",
+    },
 }
-# ──────────────────────────────────────────────────────────────────
-# La URL de data.json se calcula AUTOMÁTICAMENTE desde git remote.
-# El index.html publicado siempre hace fetch("./data.json") —
-# como están en el mismo dominio de GitHub Pages, no hay CORS.
 # ──────────────────────────────────────────────────────────────────
 
 ROOT = CFG["carpeta_datos"]
@@ -72,40 +181,13 @@ COLS_NUM = [
 ]
 COLS_DT = ["F_Vcto","Desde","Hasta"]
 
-PORTS = {
-    "21":"Portafolio 21","41":"Portafolio 41","51":"Portafolio 51",
-    "HC":"HC Cesantías","HO":"HO Obligatorio","HE":"HE Especial",
-}
-ACTIVOS = {
-    "F":"Renta Fija (TES)","H":"Liquidez","E":"Fondos Colectivos",
-    "O":"Otros Títulos","D":"Depósitos/Cash","Y":"Fondos SPC",
-    "V":"AOR","L":"Acciones","G":"Fondos","DF":"Derivados",
-    "T":"TIDIS","DB":"Depósitos Banco","HB":"Liquidez HB",
-    "W":"AOR Propios","P":"Otros",
-}
-MONEDAS = {
-    "COP":"COP","USCOP":"USD","EUO":"EUR","UKCOP":"GBP",
-    "ETQACOP":"Fdo ETQA","ETRACOP":"Fdo ETRA",
-    "ESJWX":"Fdo Alt A","ESY0O":"Fdo UnoMas",
-    "EIBMS":"Fdo Efect A","EIEMS":"Fdo Efect D",
-    "EABFR":"Fdo Occirenta","ETGWX":"Fdo Alt D",
-    "EDXR5":"SPC Corto Plazo","EDY1U":"SPC Largo Plazo",
-    "EDT1U":"SPC Conservador","EDU1U":"SPC Mayor Riesgo",
-    "EDSR6":"SPC Moderado","EDV1U":"SPC Retiro Programado",
-    "ESUMS":"Fdo Umas",
-}
-MOD_DESC = {
-    "AV":"Año Vencido","DV":"Día Vencido","Dto":"Descuento",
-    "MV":"Mes Vencido","TV":"Trimestre Vencido","NAp":"No Aplica",
-}
-EST_DESC = {
-    "Pend":"Pendiente","Reci":"En Cartera","Vend":"Vendido",
-    "Frac":"Fraccionado",
-}
-MET_DESC = {
-    "QSI":"Quantil (Fondos)","QES-SI":"Quantil Renta Fija",
-    "MC4-E":"Modelo Equity","MC1-I":"Modelo Interés",
-}
+# Accesos cortos a los mapas del CFG (se usan en transformación)
+def _PORTS():    return CFG["ports"]
+def _ACTIVOS():  return CFG["activos"]
+def _MONEDAS():  return CFG["monedas"]
+def _MOD():      return CFG["modalidades"]
+def _EST():      return CFG["estados"]
+def _MET():      return CFG["metodos"]
 
 # ══════════════════════════════════════════════════════════════════
 #  CACHÉ INCREMENTAL
@@ -170,16 +252,16 @@ def _fecha_path(p):
     return None
 
 def _tipo(e):
+    """Clasifica especie según tipo_reglas del CFG, luego tipo_map."""
+    # 1. Reclasificación manual explícita (mayor prioridad)
+    tipo_map = CFG.get("tipo_map", {})
+    if e in tipo_map:
+        return tipo_map[e]
+    # 2. Reglas por contenido de texto
     u = str(e).upper()
-    if "TES"        in u:                                   return "TES"
-    if any(x in u for x in ["CDT","CREDITO","CRÉDITO"]):   return "CDT"
-    if any(x in u for x in ["CASH","CTA AHO","CTA AH","CTA "]): return "Liquidez"
-    if any(x in u for x in ["FIC","FCPD","FCPE","FCP","P SPC"]): return "Fondos"
-    if any(x in u for x in ["DER.","DERIV"]):              return "Derivados"
-    if "AOR"        in u:                                   return "AOR"
-    if "TIDIS"      in u:                                   return "TIDIS"
-    if "TITULARIZ"  in u:                                   return "Titularizaciones"
-    if "ACC."       in u:                                   return "Acciones"
+    for regla in CFG.get("tipo_reglas", []):
+        if any(x in u for x in regla["contiene"]):
+            return regla["tipo"]
     return "Otro"
 
 # ══════════════════════════════════════════════════════════════════
@@ -274,10 +356,10 @@ def _transformar(df, fecha):
     df["Por"]            = df["Por"].str.strip()
     df["Port_Cod"]       = df["Por"].str.extract(r"^(\d+|H[COEB]+)", expand=False)
     df["Act_Cod"]        = df["Por"].str.extract(r"-(\w+)$",         expand=False)
-    df["Port_Nom"]       = df["Port_Cod"].map(PORTS).fillna(df["Port_Cod"])
-    df["Act_Nom"]        = df["Act_Cod"].map(ACTIVOS).fillna(df["Act_Cod"])
+    df["Port_Nom"]       = df["Port_Cod"].map(_PORTS()).fillna(df["Port_Cod"])
+    df["Act_Nom"]        = df["Act_Cod"].map(_ACTIVOS()).fillna(df["Act_Cod"])
     df["Moneda"]         = df["Moneda"].str.replace("$", "COP", regex=False)
-    df["Mon_Desc"]       = df["Moneda"].map(MONEDAS).fillna(df["Moneda"])
+    df["Mon_Desc"]       = df["Moneda"].map(_MONEDAS()).fillna(df["Moneda"])
     df["Es_Ext"]         = df["Moneda"].isin(["USCOP","EUO","UKCOP","USD","EUR","GBP"])
     df["PL"]             = df["Vlr_Mer_Hoy"] - df["Vlr_Mer_Ant"]
     df["Rend_Pct"]       = np.where(
@@ -287,9 +369,9 @@ def _transformar(df, fecha):
     df["Caus_Spread"]    = df["Causacion_Mer"] - df["Causacion_TIR"]
     if "F_Vcto" in df.columns:
         df["Dias_Vcto"]  = (df["F_Vcto"] - df["Fecha_Posicion"]).dt.days
-    df["Mod_Desc"]       = df["Mod"].map(MOD_DESC).fillna(df["Mod"])
-    df["Est_Desc"]       = df["Est"].map(EST_DESC).fillna(df["Est"])
-    df["Met_Desc"]       = df["Met"].map(MET_DESC).fillna(df["Met"])
+    df["Mod_Desc"]       = df["Mod"].map(_MOD()).fillna(df["Mod"])
+    df["Est_Desc"]       = df["Est"].map(_EST()).fillna(df["Est"])
+    df["Met_Desc"]       = df["Met"].map(_MET()).fillna(df["Met"])
     return df
 
 # ══════════════════════════════════════════════════════════════════
@@ -787,7 +869,19 @@ def build_json(m):
             "ultimo_dia":  sd(ult),
             "primer_dia":  sd(fechas_ord[0]),
             "n_fechas":    len(fechas_ord),
-            "data_url":    CFG.get("github_data_url",""),
+            "data_url":    "",   # se llena en main() tras detectar el remote
+        },
+        # ── Mapas editables — el dashboard los lee y permite modificarlos ──
+        "mapas": {
+            "ports":        CFG["ports"],
+            "activos":      CFG["activos"],
+            "monedas":      CFG["monedas"],
+            "modalidades":  CFG["modalidades"],
+            "estados":      CFG["estados"],
+            "metodos":      CFG["metodos"],
+            "tipo_reglas":  CFG["tipo_reglas"],
+            "tipo_colores": CFG["tipo_colores"],
+            "tipo_map":     CFG.get("tipo_map", {}),
         },
         "fechas":     [sd(d) for d in evol["Fecha_Posicion"]],
         "kpis": {
@@ -953,9 +1047,12 @@ def main():
     print("\n[3/5] Construyendo data.json...")
     data = build_json(master)
 
+    # Inyectar la URL del dashboard en los metadatos del JSON
+    if gh_user:
+        data["meta"]["data_url"] = f"https://{gh_user}.github.io/{gh_repo}/data.json"
+
     json_out = CFG["output_json"]
     with open(json_out, "w", encoding="utf-8") as f:
-        # _raw_tabla es solo para caché local; no lo necesita el dashboard
         data_pub = {k:v for k,v in data.items() if k != "_raw_tabla"}
         json.dump(data_pub, f, ensure_ascii=False, separators=(",",":"), default=str)
     kb_json = os.path.getsize(json_out) // 1024
