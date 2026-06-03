@@ -1,40 +1,14 @@
 # ╔══════════════════════════════════════════════════════════════════╗
-# ║  SAPIENZA · Procesador de Posiciones de Portafolio              ║
-# ║  Convierte CSV→XLSX · genera data.json + index.html · git push  ║
+# ║  SAPIENZA · Procesador de Posiciones de Portafolio  v3          ║
+# ║  Flujo:                                                         ║
+# ║    1. Lee CSV/XLSX nuevos (caché incremental — no reprocesa)    ║
+# ║    2. Genera data.json  +  index.html (carga data.json remoto)  ║
+# ║    3. git add + commit + push  →  GitHub Pages publica todo     ║
+# ║  Resultado: https://<user>.github.io/<repo>/                    ║
+# ║             data.json se sirve desde el mismo dominio (sin CORS)║
 # ╚══════════════════════════════════════════════════════════════════╝
-#
-# COLUMNAS DEL SISTEMA FUENTE (referencia):
-#   Especie          - Nombre del instrumento
-#   Titulo/Inver     - Códigos internos del sistema de inversiones
-#   F_Vcto           - Fecha de vencimiento del instrumento
-#   Vlr_Nominal      - Valor nominal (face value) de la posición
-#   Facial           - Tasa facial / referencia (ej: 7.5%, IBR3M+1.2%, BCL01+0F)
-#   Mod              - Modalidad: AV=Año Vencido, DV=Día Vencido, Dto=Descuento,
-#                      MV=Mes Vencido, TV=Trimestre Vencido, NAp=No Aplica
-#   Desde/Hasta      - Período de causación (fecha inicio y fin del período actual)
-#   Vlr_Mer_Ant      - Valor de mercado día ANTERIOR (en COP)
-#   Vlr_Mer_Hoy      - Valor de mercado HOYA (en COP)
-#   Adeudados        - Cupones o intereses adeudados pendientes de pago
-#   Causacion_Mer    - Causación a precios de mercado (rendimiento devengado diario)
-#   Causacion_TIR    - Causación a TIR (devengado teórico por TIR de compra)
-#   ISIN_Nemot       - Código ISIN o nemotécnico del título
-#   Met              - Método de valoración:
-#                      QSI=Quantil (fondos/liquidez), QES-SI=Quantil renta fija,
-#                      MC4-E=Modelo 4 Equity, MC1-I=Modelo 1 Interés
-#   Precio           - Precio de mercado del título (% del nominal, ej: 101.376)
-#   TIR_Mercado      - Tasa Interna de Retorno a precios de mercado (%)
-#   Moneda           - Moneda de denominación (COP, USCOP=USD, EUO=EUR, etc.)
-#   Mnd_Val_An       - Valor nominal en moneda nativa AYER (para calcular FX)
-#   Mnd_Val          - Valor nominal en moneda nativa HOY
-#   Dif_cambio       - Diferencial de tasa de cambio (Mnd_Val - Mnd_Val_An)
-#   Causacion_Moneda - Parte de causación atribuible al efecto cambiario (FX)
-#   Causacion_Tasa   - Parte de causación atribuible al efecto tasa de interés
-#   Dias             - Días de la posición en el período actual
-#   Por              - Código portafolio-activo (ej: "21-F" = Portafolio 21, Renta Fija)
-#   Est              - Estado: Pend=Pendiente liquidación, Reci=Recibido/En cartera,
-#                      Vend=Vendido, Frac=Fraccionado
 
-import os, re, glob, json, subprocess, warnings
+import os, re, glob, json, subprocess, warnings, hashlib
 from datetime import datetime
 from pathlib import Path
 
@@ -47,18 +21,25 @@ warnings.filterwarnings("ignore")
 # │  ★  CONFIGURACIÓN — solo editar aquí                            │
 # └─────────────────────────────────────────────────────────────────┘
 CFG = {
-    # Carpeta raíz con CSV/XLSX (subcarpetas por mes son detectadas automáticamente)
+    # Carpeta raíz con CSV/XLSX (subcarpetas por mes detectadas auto)
     "carpeta_datos": r"C:\Users\danie\Sapienza\POSPRO",
 
-    # Archivos generados (se sobreescriben en cada ejecución)
+    # Archivos generados (se suben a GitHub Pages)
     "output_html":   r"C:\Users\danie\Sapienza\POSPRO\index.html",
     "output_json":   r"C:\Users\danie\Sapienza\POSPRO\data.json",
 
-    # Git: commit + push automático al terminar
+    # Caché incremental {ruta_relativa: {hash, fecha_proceso}}
+    # Nunca se sube a GitHub (está en .gitignore)
+    "cache_file":    r"C:\Users\danie\Sapienza\POSPRO\.cache_procesado.json",
+
+    # Git: commit + push automático
     "git_push": True,
     "git_msg":  "data: posiciones {fecha}",
 
-    # Archivos que NO son datos fuente (se ignoran al buscar)
+    # Rama de GitHub Pages (normalmente "main" o "gh-pages")
+    "git_branch": "main",
+
+    # Archivos que NO son datos fuente (ignorados al buscar XLSX)
     "ignorar": {
         "posiciones_consolidadas.xlsx", "index.html",
         "dashboard.html", "data.json", "_dashboard_tpl.html",
@@ -69,10 +50,13 @@ CFG = {
     "sub":  "Dashboard de Posiciones de Portafolio",
 }
 # ──────────────────────────────────────────────────────────────────
+# La URL de data.json se calcula AUTOMÁTICAMENTE desde git remote.
+# El index.html publicado siempre hace fetch("./data.json") —
+# como están en el mismo dominio de GitHub Pages, no hay CORS.
+# ──────────────────────────────────────────────────────────────────
 
 ROOT = CFG["carpeta_datos"]
 
-# Columnas del archivo fuente (en orden exacto del CSV)
 COLS_RAW = [
     "Especie","Titulo","Inver","F_Vcto","Vlr_Nominal","Facial","Mod",
     "Desde","Hasta","Vlr_Mer_Ant","Vlr_Mer_Hoy","Adeudados",
@@ -88,7 +72,6 @@ COLS_NUM = [
 ]
 COLS_DT = ["F_Vcto","Desde","Hasta"]
 
-# Mapas de códigos → nombres legibles
 PORTS = {
     "21":"Portafolio 21","41":"Portafolio 41","51":"Portafolio 51",
     "HC":"HC Cesantías","HO":"HO Obligatorio","HE":"HE Especial",
@@ -124,7 +107,48 @@ MET_DESC = {
     "MC4-E":"Modelo Equity","MC1-I":"Modelo Interés",
 }
 
-# ── Funciones de limpieza ─────────────────────────────────────────
+# ══════════════════════════════════════════════════════════════════
+#  CACHÉ INCREMENTAL
+# ══════════════════════════════════════════════════════════════════
+
+def _hash_file(path: str) -> str:
+    """MD5 rápido del archivo (primeros 512 KB bastan para detectar cambios)."""
+    h = hashlib.md5()
+    with open(path, "rb") as f:
+        h.update(f.read(524288))
+    return h.hexdigest()
+
+def cargar_cache() -> dict:
+    p = CFG["cache_file"]
+    if os.path.exists(p):
+        try:
+            with open(p, encoding="utf-8") as f:
+                return json.load(f)
+        except Exception:
+            pass
+    return {}
+
+def guardar_cache(cache: dict):
+    with open(CFG["cache_file"], "w", encoding="utf-8") as f:
+        json.dump(cache, f, ensure_ascii=False, indent=2)
+
+def archivo_ya_procesado(path: str, cache: dict) -> bool:
+    """True si el archivo está en caché y su hash no cambió."""
+    key = os.path.relpath(path, ROOT)
+    if key not in cache:
+        return False
+    return cache[key].get("hash") == _hash_file(path)
+
+def marcar_procesado(path: str, cache: dict):
+    key = os.path.relpath(path, ROOT)
+    cache[key] = {
+        "hash":     _hash_file(path),
+        "procesado": datetime.now().isoformat(timespec="seconds"),
+    }
+
+# ══════════════════════════════════════════════════════════════════
+#  LIMPIEZA / PARSEO
+# ══════════════════════════════════════════════════════════════════
 
 def _num(v):
     if pd.isna(v): return np.nan
@@ -146,7 +170,6 @@ def _fecha_path(p):
     return None
 
 def _tipo(e):
-    """Clasifica el instrumento por nombre de especie."""
     u = str(e).upper()
     if "TES"        in u:                                   return "TES"
     if any(x in u for x in ["CDT","CREDITO","CRÉDITO"]):   return "CDT"
@@ -159,7 +182,9 @@ def _tipo(e):
     if "ACC."       in u:                                   return "Acciones"
     return "Otro"
 
-# ── Lectura de archivos ───────────────────────────────────────────
+# ══════════════════════════════════════════════════════════════════
+#  LECTURA DE ARCHIVOS
+# ══════════════════════════════════════════════════════════════════
 
 def _leer_csv(path):
     try:
@@ -194,13 +219,11 @@ def _leer_xlsx(path):
         print(f"  [WARN] {os.path.basename(path)}: {e}")
         return None
 
-# ── Conversión CSV → XLSX ─────────────────────────────────────────
+# ══════════════════════════════════════════════════════════════════
+#  CONVERSIÓN CSV → XLSX
+# ══════════════════════════════════════════════════════════════════
 
-def convertir_csvs():
-    """
-    Convierte todos los CSV de la carpeta (y subcarpetas) a XLSX
-    en la misma ubicación. Si el XLSX ya existe y es más reciente, lo salta.
-    """
+def convertir_csvs(cache: dict):
     csvs = list({os.path.normcase(p): p for p in
         glob.glob(os.path.join(ROOT, "**", "*.CSV"), recursive=True) +
         glob.glob(os.path.join(ROOT, "**", "*.csv"), recursive=True)
@@ -209,7 +232,6 @@ def convertir_csvs():
     convertidos = 0
     for csv_path in sorted(csvs):
         xlsx_path = os.path.splitext(csv_path)[0] + ".xlsx"
-        # Saltar si XLSX ya existe y es más reciente que el CSV
         if (os.path.exists(xlsx_path) and
                 os.path.getmtime(xlsx_path) >= os.path.getmtime(csv_path)):
             continue
@@ -225,27 +247,22 @@ def convertir_csvs():
     else:
         print("  Sin CSV nuevos para convertir.")
 
-# ── Transformación ────────────────────────────────────────────────
+# ══════════════════════════════════════════════════════════════════
+#  TRANSFORMACIÓN
+# ══════════════════════════════════════════════════════════════════
 
 def _transformar(df, fecha):
     df = df.copy()
-
-    # Limpiar strings
     for c in df.columns:
         if df[c].dtype == object:
             df[c] = df[c].str.strip()
-
-    # Convertir numéricos
     for c in COLS_NUM:
         if c in df.columns:
             df[c] = df[c].apply(_num)
-
-    # Convertir fechas
     for c in COLS_DT:
         if c in df.columns:
             df[c] = df[c].apply(_dt)
 
-    # Campos calculados base
     df["Fecha_Posicion"] = pd.to_datetime(fecha)
     df["Especie"]        = df["Especie"].str.strip()
     df["ISIN_Nemot"]     = df["ISIN_Nemot"].str.strip().replace("", np.nan)
@@ -253,86 +270,118 @@ def _transformar(df, fecha):
     df["Mod"]            = df["Mod"].str.strip()
     df["Met"]            = df["Met"].str.strip()
     df["Facial"]         = df["Facial"].str.strip()
-
-    # Clasificación de instrumento
-    df["Tipo"] = df["Especie"].apply(_tipo)
-
-    # Portafolio y tipo de activo desde código "Por"
-    df["Por"]      = df["Por"].str.strip()
-    df["Port_Cod"] = df["Por"].str.extract(r"^(\d+|H[COEB]+)", expand=False)
-    df["Act_Cod"]  = df["Por"].str.extract(r"-(\w+)$",         expand=False)
-    df["Port_Nom"] = df["Port_Cod"].map(PORTS).fillna(df["Port_Cod"])
-    df["Act_Nom"]  = df["Act_Cod"].map(ACTIVOS).fillna(df["Act_Cod"])
-
-    # Moneda
-    df["Moneda"]   = df["Moneda"].str.replace("$", "COP", regex=False)
-    df["Mon_Desc"] = df["Moneda"].map(MONEDAS).fillna(df["Moneda"])
-    df["Es_Ext"]   = df["Moneda"].isin(["USCOP","EUO","UKCOP","USD","EUR","GBP"])
-
-    # P&L y rendimiento
-    df["PL"]       = df["Vlr_Mer_Hoy"] - df["Vlr_Mer_Ant"]
-    df["Rend_Pct"] = np.where(
+    df["Tipo"]           = df["Especie"].apply(_tipo)
+    df["Por"]            = df["Por"].str.strip()
+    df["Port_Cod"]       = df["Por"].str.extract(r"^(\d+|H[COEB]+)", expand=False)
+    df["Act_Cod"]        = df["Por"].str.extract(r"-(\w+)$",         expand=False)
+    df["Port_Nom"]       = df["Port_Cod"].map(PORTS).fillna(df["Port_Cod"])
+    df["Act_Nom"]        = df["Act_Cod"].map(ACTIVOS).fillna(df["Act_Cod"])
+    df["Moneda"]         = df["Moneda"].str.replace("$", "COP", regex=False)
+    df["Mon_Desc"]       = df["Moneda"].map(MONEDAS).fillna(df["Moneda"])
+    df["Es_Ext"]         = df["Moneda"].isin(["USCOP","EUO","UKCOP","USD","EUR","GBP"])
+    df["PL"]             = df["Vlr_Mer_Hoy"] - df["Vlr_Mer_Ant"]
+    df["Rend_Pct"]       = np.where(
         df["Vlr_Mer_Ant"] != 0,
-        df["PL"] / df["Vlr_Mer_Ant"] * 100,
-        np.nan
+        df["PL"] / df["Vlr_Mer_Ant"] * 100, np.nan
     )
-
-    # Descomposición de causación
-    # Causacion_Mer   = total causación a mercado
-    # Causacion_TIR   = causación teórica a TIR de compra
-    # Causacion_Tasa  = componente por movimiento de tasas
-    # Causacion_Moneda= componente por movimiento de FX
-    df["Caus_Spread"] = df["Causacion_Mer"] - df["Causacion_TIR"]  # diferencia mercado vs TIR
-
-    # Días al vencimiento
+    df["Caus_Spread"]    = df["Causacion_Mer"] - df["Causacion_TIR"]
     if "F_Vcto" in df.columns:
-        df["Dias_Vcto"] = (df["F_Vcto"] - df["Fecha_Posicion"]).dt.days
-
-    # Descripción de modalidad y estado
-    df["Mod_Desc"] = df["Mod"].map(MOD_DESC).fillna(df["Mod"])
-    df["Est_Desc"] = df["Est"].map(EST_DESC).fillna(df["Est"])
-    df["Met_Desc"] = df["Met"].map(MET_DESC).fillna(df["Met"])
-
+        df["Dias_Vcto"]  = (df["F_Vcto"] - df["Fecha_Posicion"]).dt.days
+    df["Mod_Desc"]       = df["Mod"].map(MOD_DESC).fillna(df["Mod"])
+    df["Est_Desc"]       = df["Est"].map(EST_DESC).fillna(df["Est"])
+    df["Met_Desc"]       = df["Met"].map(MET_DESC).fillna(df["Met"])
     return df
 
-# ── Carga completa ────────────────────────────────────────────────
+# ══════════════════════════════════════════════════════════════════
+#  CARGA CON CACHÉ INCREMENTAL
+# ══════════════════════════════════════════════════════════════════
 
-def cargar():
+def cargar(cache: dict):
+    """
+    Carga todos los XLSX.
+    - Si existe data.json previo: extrae fechas ya procesadas.
+    - Solo procesa archivos nuevos o modificados (hash distinto).
+    - Combina datos nuevos con datos previos del JSON.
+    """
     ign = CFG["ignorar"]
     xlsxs = [p for p in
         glob.glob(os.path.join(ROOT, "**", "*.xlsx"), recursive=True) +
         glob.glob(os.path.join(ROOT, "**", "*.xls"),  recursive=True)
         if os.path.basename(p) not in ign
     ]
-    # Deduplicar por ruta normalizada
     xlsxs = list({os.path.normcase(p): p for p in xlsxs}.values())
 
-    todos = []
-    print(f"XLSX: {len(xlsxs)} archivos encontrados")
-    for p in sorted(xlsxs):
+    # Separar archivos nuevos/modificados de los ya procesados
+    nuevos    = [p for p in xlsxs if not archivo_ya_procesado(p, cache)]
+    ya_ok     = [p for p in xlsxs if     archivo_ya_procesado(p, cache)]
+
+    print(f"XLSX encontrados: {len(xlsxs)}  "
+          f"({len(nuevos)} nuevos/modificados, {len(ya_ok)} en caché)")
+
+    # Cargar datos previos del JSON si existe
+    datos_previos = pd.DataFrame()
+    json_path = CFG["output_json"]
+    if os.path.exists(json_path) and ya_ok:
+        try:
+            with open(json_path, encoding="utf-8") as f:
+                prev_json = json.load(f)
+            # Reconstruir DataFrame desde la tabla del JSON
+            filas = prev_json.get("_raw_tabla", [])
+            if filas:
+                datos_previos = pd.DataFrame(filas)
+                datos_previos["Fecha_Posicion"] = pd.to_datetime(
+                    datos_previos["Fecha_Posicion"]
+                )
+                print(f"  Datos previos cargados del JSON: "
+                      f"{len(datos_previos):,} filas | "
+                      f"{datos_previos['Fecha_Posicion'].nunique()} fechas")
+        except Exception as e:
+            print(f"  [WARN] No se pudo leer datos previos del JSON: {e}")
+
+    # Procesar archivos nuevos
+    todos_nuevos = []
+    for p in sorted(nuevos):
         f  = _fecha_path(p)
         df = _leer_xlsx(p)
         if df is not None and not df.empty:
             df = _transformar(df, f)
             df["_src"] = os.path.basename(p)
-            todos.append(df)
-            print(f"  {os.path.relpath(p, ROOT)} -> {len(df)} filas | fecha={f}")
+            todos_nuevos.append(df)
+            marcar_procesado(p, cache)
+            print(f"  [NUEVO] {os.path.relpath(p, ROOT)} -> "
+                  f"{len(df)} filas | fecha={f}")
+        else:
+            print(f"  [SKIP]  {os.path.relpath(p, ROOT)} vacío")
 
-    if not todos:
-        raise SystemExit("[ERROR] No se encontraron archivos de datos.")
+    if not todos_nuevos and datos_previos.empty:
+        raise SystemExit("[ERROR] No se encontraron datos.")
 
-    master = (pd.concat(todos, ignore_index=True)
+    # Combinar previos + nuevos
+    partes = []
+    if not datos_previos.empty:
+        partes.append(datos_previos)
+    if todos_nuevos:
+        partes.append(pd.concat(todos_nuevos, ignore_index=True))
+
+    master = (pd.concat(partes, ignore_index=True)
               .sort_values(["Fecha_Posicion","Especie"], ignore_index=True))
 
-    print(f"\nTotal: {len(master):,} registros | "
+    # Deduplicar: si una misma fecha+especie+portafolio aparece dos veces,
+    # quedarse con la más reciente (el archivo más nuevo tiene prioridad)
+    master = master.drop_duplicates(
+        subset=["Fecha_Posicion","Especie","Por"], keep="last"
+    )
+
+    print(f"\nTotal combinado: {len(master):,} registros | "
           f"{master['Fecha_Posicion'].nunique()} fechas | "
           f"{master['Especie'].nunique()} especies")
-    return master
+    return master, bool(todos_nuevos)
 
-# ── Helpers de serialización ──────────────────────────────────────
+# ══════════════════════════════════════════════════════════════════
+#  SERIALIZACIÓN
+# ══════════════════════════════════════════════════════════════════
 
 def sf(v):
-    """float seguro para JSON"""
     if v is None: return None
     try:
         f = float(v)
@@ -340,12 +389,10 @@ def sf(v):
     except: return None
 
 def sd(v):
-    """datetime → "YYYY-MM-DD" """
     try: return pd.Timestamp(v).strftime("%Y-%m-%d") if pd.notna(v) else None
     except: return None
 
 def rows(df):
-    """DataFrame → lista de dicts con valores seguros para JSON"""
     out = []
     for _, r in df.iterrows():
         row = {}
@@ -363,44 +410,174 @@ def rows(df):
         out.append(row)
     return out
 
-# ── Construcción del JSON ─────────────────────────────────────────
+def _raw_row(r):
+    """Serializa una fila del master para guardar en _raw_tabla (caché JSON)."""
+    keep = [
+        "Especie","Titulo","Inver","F_Vcto","Vlr_Nominal","Facial","Mod",
+        "Desde","Hasta","Vlr_Mer_Ant","Vlr_Mer_Hoy","Adeudados",
+        "Causacion_Mer","Causacion_TIR","ISIN_Nemot","Met","Precio",
+        "Marg_Efec","TIR_Mercado","Moneda","Mnd_Val_An","Mnd_Val",
+        "Dif_cambio","Causacion_Moneda","Causacion_Tasa","Dias","Por","Est",
+        "Fecha_Posicion","Tipo","Port_Cod","Act_Cod","Port_Nom","Act_Nom",
+        "Mon_Desc","Es_Ext","PL","Rend_Pct","Caus_Spread",
+        "Dias_Vcto","Mod_Desc","Est_Desc","Met_Desc","_src",
+    ]
+    row = {}
+    for k in keep:
+        if k not in r.index: continue
+        v = r[k]
+        if isinstance(v, (float, np.floating)):
+            row[k] = sf(v)
+        elif isinstance(v, (int, np.integer)) and not isinstance(v, bool):
+            row[k] = int(v)
+        elif isinstance(v, bool) or isinstance(v, np.bool_):
+            row[k] = bool(v)
+        elif pd.isna(v) if not isinstance(v, (list, dict)) else False:
+            row[k] = None
+        elif isinstance(v, pd.Timestamp):
+            row[k] = v.isoformat()
+        else:
+            row[k] = str(v)
+    return row
+
+# ══════════════════════════════════════════════════════════════════
+#  EXTRAS
+# ══════════════════════════════════════════════════════════════════
+
+def _build_extras(m, hoy, evol, fechas_ord):
+    nom_evol = m.groupby("Fecha_Posicion").agg(
+        nominal=("Vlr_Nominal","sum"),
+        mercado=("Vlr_Mer_Hoy","sum"),
+        n_titulos=("Especie","nunique"),
+        adeudados=("Adeudados","sum"),
+    ).reset_index().sort_values("Fecha_Posicion")
+    nom_evol["spread_pct"] = (
+        (nom_evol["mercado"] - nom_evol["nominal"])
+        / nom_evol["nominal"].replace(0, np.nan) * 100
+    )
+
+    vcto = hoy[hoy["Dias_Vcto"].notna() & (hoy["Dias_Vcto"] > 0)].copy()
+    bins   = [0,30,60,90,180,365,730,9999]
+    labels = ["<30d","30-60d","60-90d","90-180d","180d-1a","1a-2a",">2a"]
+    vcto["bucket"] = pd.cut(vcto["Dias_Vcto"], bins=bins, labels=labels)
+    vcto_buck = vcto.groupby("bucket", observed=True).agg(
+        valor=("Vlr_Mer_Hoy","sum"), n=("Especie","count")
+    ).reset_index()
+
+    est_evol  = m.groupby(["Fecha_Posicion","Est_Desc"])["Vlr_Mer_Hoy"].sum().reset_index()
+    estados_u = sorted(m["Est_Desc"].dropna().unique().tolist())
+    est_dict  = {}
+    for e in estados_u:
+        sub = est_evol[est_evol["Est_Desc"]==e].sort_values("Fecha_Posicion")
+        est_dict[e] = [sf(v) for v in sub["Vlr_Mer_Hoy"]]
+
+    total_hoy = hoy["Vlr_Mer_Hoy"].sum()
+    top10 = hoy.groupby("Especie")["Vlr_Mer_Hoy"].sum().sort_values(ascending=False).head(10)
+    concentracion = [
+        {"esp":k,"valor":sf(v),"pct":sf(v/total_hoy*100)}
+        for k,v in top10.items()
+    ]
+
+    cross = hoy.groupby(["Port_Nom","Tipo"])["Vlr_Mer_Hoy"].sum().reset_index()
+    cross_dict = {}
+    for _, r in cross.iterrows():
+        p = str(r["Port_Nom"]); t = str(r["Tipo"])
+        if p not in cross_dict: cross_dict[p] = {}
+        cross_dict[p][t] = sf(r["Vlr_Mer_Hoy"])
+
+    ports = m["Port_Nom"].dropna().unique()
+    nom_port_dict = {}
+    n_port_dict   = {}
+    for p in ports:
+        sub_n = m[m["Port_Nom"]==p].groupby("Fecha_Posicion")["Vlr_Nominal"].sum().reset_index().sort_values("Fecha_Posicion")
+        nom_port_dict[str(p)] = [sf(v) for v in sub_n["Vlr_Nominal"]]
+        sub_c = m[m["Port_Nom"]==p].groupby("Fecha_Posicion")["Especie"].nunique().reset_index().sort_values("Fecha_Posicion")
+        n_port_dict[str(p)] = [int(v) for v in sub_c["Especie"]]
+
+    # Rentabilidad mensual
+    m2 = m.copy()
+    m2["mes"] = m2["Fecha_Posicion"].dt.to_period("M").astype(str)
+    rent_mes = m2.groupby("mes")["PL"].sum().reset_index()
+    rent_mes_dict = {r["mes"]: sf(r["PL"]) for _, r in rent_mes.iterrows()}
+
+    # Correlación portafolios (últimos 30 días si hay suficientes datos)
+    corr_dict = {}
+    try:
+        if len(fechas_ord) >= 5:
+            pivot = m.pivot_table(
+                index="Fecha_Posicion", columns="Port_Nom",
+                values="PL", aggfunc="sum"
+            )
+            corr = pivot.corr().round(3)
+            corr_dict = {
+                col: {row: sf(corr.loc[row, col]) for row in corr.index}
+                for col in corr.columns
+            }
+    except Exception:
+        pass
+
+    return {
+        "nom_evol": {
+            "nominal":   [sf(v) for v in nom_evol["nominal"]],
+            "mercado":   [sf(v) for v in nom_evol["mercado"]],
+            "n_titulos": [int(v) for v in nom_evol["n_titulos"]],
+            "adeudados": [sf(v) for v in nom_evol["adeudados"]],
+            "spread_pct":[sf(v) for v in nom_evol["spread_pct"]],
+        },
+        "vcto_buckets": {
+            "labels": [str(r["bucket"]) for _,r in vcto_buck.iterrows()],
+            "valores": [sf(r["valor"]) for _,r in vcto_buck.iterrows()],
+            "n":       [int(r["n"]) for _,r in vcto_buck.iterrows()],
+        },
+        "estados":        est_dict,
+        "estados_u":      estados_u,
+        "concentracion":  concentracion,
+        "cross":          cross_dict,
+        "nom_port":       nom_port_dict,
+        "n_port":         n_port_dict,
+        "rent_mensual":   rent_mes_dict,
+        "correlacion":    corr_dict,
+    }
+
+# ══════════════════════════════════════════════════════════════════
+#  BUILD JSON
+# ══════════════════════════════════════════════════════════════════
 
 def build_json(m):
     fechas_ord = sorted(m["Fecha_Posicion"].unique())
-    ult = fechas_ord[-1]
-    hoy = m[m["Fecha_Posicion"] == ult]
+    ult  = fechas_ord[-1]
+    hoy  = m[m["Fecha_Posicion"] == ult]
 
-    # ── 1. Series temporales completas ───────────────────────────
+    # Series temporales
     evol = (m.groupby("Fecha_Posicion").agg(
-        total=("Vlr_Mer_Hoy","sum"),
-        pl=("PL","sum"),
-        caus_mer=("Causacion_Mer","sum"),
-        caus_tir=("Causacion_TIR","sum"),
-        caus_mon=("Causacion_Moneda","sum"),
-        caus_tasa=("Causacion_Tasa","sum"),
-        adeudados=("Adeudados","sum"),
-        n=("Especie","count"),
+        total=("Vlr_Mer_Hoy","sum"), pl=("PL","sum"),
+        caus_mer=("Causacion_Mer","sum"), caus_tir=("Causacion_TIR","sum"),
+        caus_mon=("Causacion_Moneda","sum"), caus_tasa=("Causacion_Tasa","sum"),
+        adeudados=("Adeudados","sum"), n=("Especie","count"),
+        nominal=("Vlr_Nominal","sum"),
     ).reset_index().sort_values("Fecha_Posicion"))
-    evol["pl_acum"]      = evol["pl"].cumsum()
-    evol["caus_acum"]    = evol["caus_mer"].cumsum()
-    evol["rend_pct"]     = evol["pl"] / evol["total"].shift(1).replace(0, np.nan) * 100
+    evol["pl_acum"]   = evol["pl"].cumsum()
+    evol["caus_acum"] = evol["caus_mer"].cumsum()
+    evol["rend_pct"]  = evol["pl"] / evol["total"].shift(1).replace(0, np.nan) * 100
 
-    # ── 2. Por portafolio × fecha ─────────────────────────────────
+    # Por portafolio × fecha
     ep = m.groupby(["Fecha_Posicion","Port_Nom"]).agg(
         total=("Vlr_Mer_Hoy","sum"), pl=("PL","sum"),
-        caus=("Causacion_Mer","sum"), n=("Especie","count")
+        caus=("Causacion_Mer","sum"), n=("Especie","count"),
+        nominal=("Vlr_Nominal","sum"),
     ).reset_index()
     ports_u = sorted(m["Port_Nom"].dropna().unique().tolist())
     evol_port = {}
     for p in ports_u:
         s = ep[ep["Port_Nom"]==p].sort_values("Fecha_Posicion")
         evol_port[p] = {
-            "total": [sf(v) for v in s["total"]],
-            "pl":    [sf(v) for v in s["pl"]],
-            "caus":  [sf(v) for v in s["caus"]],
+            "total":   [sf(v) for v in s["total"]],
+            "pl":      [sf(v) for v in s["pl"]],
+            "caus":    [sf(v) for v in s["caus"]],
+            "nominal": [sf(v) for v in s["nominal"]],
         }
 
-    # ── 3. Por tipo × fecha ───────────────────────────────────────
+    # Por tipo × fecha
     et = m.groupby(["Fecha_Posicion","Tipo"]).agg(
         total=("Vlr_Mer_Hoy","sum"), pl=("PL","sum")
     ).reset_index()
@@ -410,61 +587,56 @@ def build_json(m):
         s = et[et["Tipo"]==t].sort_values("Fecha_Posicion")
         evol_tipo[t] = [sf(v) for v in s["total"]]
 
-    # ── 4. Historia completa por especie ──────────────────────────
+    # Historia por especie
     esp_hist = {}
     for esp, grp in m.groupby("Especie"):
         g = grp.sort_values("Fecha_Posicion")
         esp_hist[esp] = {
-            "fechas":  [sd(d) for d in g["Fecha_Posicion"]],
-            "total":   [sf(v) for v in g["Vlr_Mer_Hoy"]],
-            "pl":      [sf(v) for v in g["PL"]],
-            "caus":    [sf(v) for v in g["Causacion_Mer"]],
-            "caus_tir":[sf(v) for v in g["Causacion_TIR"]],
-            "caus_mon":[sf(v) for v in g["Causacion_Moneda"]],
-            "caus_tasa":[sf(v) for v in g["Causacion_Tasa"]],
-            "tir":     [sf(v) for v in g["TIR_Mercado"]],
-            "precio":  [sf(v) for v in g["Precio"]],
-            "port":    str(g["Port_Nom"].iloc[-1]) if pd.notna(g["Port_Nom"].iloc[-1]) else "",
-            "tipo":    str(g["Tipo"].iloc[-1]),
+            "fechas":    [sd(d) for d in g["Fecha_Posicion"]],
+            "total":     [sf(v) for v in g["Vlr_Mer_Hoy"]],
+            "pl":        [sf(v) for v in g["PL"]],
+            "caus":      [sf(v) for v in g["Causacion_Mer"]],
+            "caus_tir":  [sf(v) for v in g["Causacion_TIR"]],
+            "caus_mon":  [sf(v) for v in g["Causacion_Moneda"]],
+            "caus_tasa": [sf(v) for v in g["Causacion_Tasa"]],
+            "tir":       [sf(v) for v in g["TIR_Mercado"]],
+            "precio":    [sf(v) for v in g["Precio"]],
+            "port":      str(g["Port_Nom"].iloc[-1]) if pd.notna(g["Port_Nom"].iloc[-1]) else "",
+            "tipo":      str(g["Tipo"].iloc[-1]),
         }
 
-    # ── 5. Último día — tabla detalle completa ───────────────────
+    # Tabla detalle último día
     def _det(r):
         return {
             "esp":       str(r["Especie"]),
-            "port":      str(r["Port_Nom"])  if pd.notna(r["Port_Nom"])  else "",
-            "act":       str(r["Act_Nom"])   if pd.notna(r["Act_Nom"])   else "",
+            "port":      str(r["Port_Nom"])   if pd.notna(r["Port_Nom"])   else "",
+            "act":       str(r["Act_Nom"])    if pd.notna(r["Act_Nom"])    else "",
             "tipo":      str(r["Tipo"]),
-            "isin":      str(r["ISIN_Nemot"])if pd.notna(r["ISIN_Nemot"])else "",
+            "isin":      str(r["ISIN_Nemot"]) if pd.notna(r["ISIN_Nemot"])else "",
             "nominal":   sf(r["Vlr_Nominal"]),
             "v_ant":     sf(r["Vlr_Mer_Ant"]),
             "valor":     sf(r["Vlr_Mer_Hoy"]),
             "pl":        sf(r["PL"]),
             "rend":      sf(r["Rend_Pct"]),
-            # Causaciones descompuestas
             "caus_mer":  sf(r["Causacion_Mer"]),
             "caus_tir":  sf(r["Causacion_TIR"]),
             "caus_mon":  sf(r["Causacion_Moneda"]),
             "caus_tasa": sf(r["Causacion_Tasa"]),
             "caus_diff": sf(r.get("Caus_Spread", 0)),
             "adeudados": sf(r["Adeudados"]),
-            # Precio y TIR
             "tir":       sf(r["TIR_Mercado"]),
             "precio":    sf(r["Precio"]),
-            # Moneda / FX
             "moneda":    str(r["Mon_Desc"]),
             "ext":       bool(r["Es_Ext"]),
             "mnd_hoy":   sf(r["Mnd_Val"]),
             "mnd_ant":   sf(r["Mnd_Val_An"]),
             "dif_fx":    sf(r["Dif_cambio"]),
-            # Vencimiento
             "vcto":      sd(r.get("F_Vcto")),
             "dias_vcto": sf(r.get("Dias_Vcto")),
-            # Descriptivos
-            "facial":    str(r["Facial"])   if pd.notna(r["Facial"])   else "",
-            "mod":       str(r["Mod_Desc"]) if pd.notna(r["Mod_Desc"]) else "",
-            "est":       str(r["Est_Desc"]) if pd.notna(r["Est_Desc"]) else "",
-            "met":       str(r["Met_Desc"]) if pd.notna(r["Met_Desc"]) else "",
+            "facial":    str(r["Facial"])    if pd.notna(r["Facial"])    else "",
+            "mod":       str(r["Mod_Desc"])  if pd.notna(r["Mod_Desc"])  else "",
+            "est":       str(r["Est_Desc"])  if pd.notna(r["Est_Desc"])  else "",
+            "met":       str(r["Met_Desc"])  if pd.notna(r["Met_Desc"])  else "",
             "por":       str(r["Por"]),
             "desde":     sd(r.get("Desde")),
             "hasta":     sd(r.get("Hasta")),
@@ -472,20 +644,16 @@ def build_json(m):
         }
 
     tabla = [_det(r) for _, r in hoy.sort_values("Vlr_Mer_Hoy", ascending=False).iterrows()]
+    tes   = [_det(r) for _, r in
+             hoy[hoy["Tipo"].isin(["TES","TIDIS","Titularizaciones","CDT"])]
+             .sort_values("Vlr_Mer_Hoy", ascending=False).iterrows()]
 
-    # Renta fija por separado
-    tes  = [_det(r) for _, r in
-            hoy[hoy["Tipo"].isin(["TES","TIDIS","Titularizaciones","CDT"])]
-            .sort_values("Vlr_Mer_Hoy", ascending=False).iterrows()]
-
-    # ── 6. Resúmenes ─────────────────────────────────────────────
-
-    def _gagg(grp_col, extra_aggs=None):
+    # Resúmenes
+    def _gagg(grp_col):
         agg = {"total":("Vlr_Mer_Hoy","sum"),"pl":("PL","sum"),
                "caus":("Causacion_Mer","sum"),"caus_tir":("Causacion_TIR","sum"),
                "caus_mon":("Causacion_Moneda","sum"),"caus_tasa":("Causacion_Tasa","sum"),
                "n":("Especie","count")}
-        if extra_aggs: agg.update(extra_aggs)
         df_g = (hoy.groupby(grp_col).agg(**{k:v for k,v in agg.items()})
                 .reset_index().sort_values("total", ascending=False))
         df_g["pct"] = df_g["total"] / df_g["total"].sum() * 100
@@ -497,14 +665,12 @@ def build_json(m):
     by_act  = _gagg("Act_Nom")
     by_mod  = _gagg("Mod")
 
-    # Causación descompuesta por portafolio (histórico)
+    # Causación histórica por portafolio
     caus_hist = {}
     for p in ports_u:
         sub = m[m["Port_Nom"]==p].groupby("Fecha_Posicion").agg(
-            caus_mer=("Causacion_Mer","sum"),
-            caus_tir=("Causacion_TIR","sum"),
-            caus_mon=("Causacion_Moneda","sum"),
-            caus_tasa=("Causacion_Tasa","sum"),
+            caus_mer=("Causacion_Mer","sum"), caus_tir=("Causacion_TIR","sum"),
+            caus_mon=("Causacion_Moneda","sum"), caus_tasa=("Causacion_Tasa","sum"),
         ).reset_index().sort_values("Fecha_Posicion")
         caus_hist[p] = {
             "mer":  [sf(v) for v in sub["caus_mer"]],
@@ -513,10 +679,9 @@ def build_json(m):
             "tasa": [sf(v) for v in sub["caus_tasa"]],
         }
 
-    # Composición por portafolio × tipo (último día)
     comp = rows(hoy.groupby(["Port_Nom","Tipo"])["Vlr_Mer_Hoy"].sum().reset_index())
 
-    # ── 7. KPIs último día ────────────────────────────────────────
+    # KPIs
     tot    = sf(hoy["Vlr_Mer_Hoy"].sum())
     ant    = sf(hoy["Vlr_Mer_Ant"].sum())
     pl_d   = sf(hoy["PL"].sum())
@@ -528,26 +693,23 @@ def build_json(m):
     n_pos  = int(len(hoy))
     var_p  = sf(pl_d / ant * 100) if ant else 0
 
-    # TIR ponderada (solo instrumentos con TIR significativa)
-    mask   = hoy["TIR_Mercado"].notna() & (hoy["TIR_Mercado"] > 0.0001) & (hoy["TIR_Mercado"] < 30)
-    tir_p  = sf(
+    mask  = hoy["TIR_Mercado"].notna() & (hoy["TIR_Mercado"] > 0.0001) & (hoy["TIR_Mercado"] < 30)
+    tir_p = sf(
         (hoy.loc[mask,"Vlr_Mer_Hoy"] * hoy.loc[mask,"TIR_Mercado"]).sum()
         / hoy.loc[mask,"Vlr_Mer_Hoy"].sum()
     ) if mask.any() else None
 
-    # Duración promedio ponderada (solo RF)
     rf_mask = hoy["Tipo"].isin(["TES","CDT","TIDIS","Titularizaciones"]) & hoy["Dias_Vcto"].notna()
     dur_p   = sf(
         (hoy.loc[rf_mask,"Vlr_Mer_Hoy"] * hoy.loc[rf_mask,"Dias_Vcto"]).sum()
         / hoy.loc[rf_mask,"Vlr_Mer_Hoy"].sum()
     ) if rf_mask.any() else None
 
-    # Exposición FX total
     fx_total = sf(hoy[hoy["Es_Ext"]]["Vlr_Mer_Hoy"].sum())
     fx_pct   = sf(fx_total / tot * 100) if (tot and fx_total) else 0
 
-    # ── 8. Estadísticas del período ───────────────────────────────
-    pl_arr = evol["pl"].values
+    # Estadísticas período
+    pl_arr  = evol["pl"].values
     tot_arr = evol["total"].values
 
     def _dd(arr):
@@ -564,24 +726,26 @@ def build_json(m):
     )
 
     stats = {
-        "pl_max":   sf(float(pl_arr.max())),
-        "pl_min":   sf(float(pl_arr.min())),
-        "pl_avg":   sf(float(pl_arr.mean())),
-        "pl_std":   sf(float(pl_arr.std())),
-        "pl_acum":  sf(float(pl_arr.sum())),
-        "dias_pos": int((pl_arr > 0).sum()),
-        "dias_neg": int((pl_arr < 0).sum()),
-        "dias_tot": len(pl_arr),
-        "sharpe":   sharpe,
-        "drawdown": sf(_dd(tot_arr)),
-        "n_fechas": len(fechas_ord),
-        "n_esp":    int(m["Especie"].nunique()),
+        "pl_max":     sf(float(pl_arr.max())),
+        "pl_min":     sf(float(pl_arr.min())),
+        "pl_avg":     sf(float(pl_arr.mean())),
+        "pl_std":     sf(float(pl_arr.std())),
+        "pl_acum":    sf(float(pl_arr.sum())),
+        "dias_pos":   int((pl_arr > 0).sum()),
+        "dias_neg":   int((pl_arr < 0).sum()),
+        "dias_tot":   len(pl_arr),
+        "sharpe":     sharpe,
+        "drawdown":   sf(_dd(tot_arr)),
+        "n_fechas":   len(fechas_ord),
+        "n_esp":      int(m["Especie"].nunique()),
         "primer_dia": sd(fechas_ord[0]),
         "ultimo_dia": sd(fechas_ord[-1]),
-        "var_periodo": sf((tot_arr[-1] - tot_arr[0]) / tot_arr[0] * 100) if tot_arr[0] else 0,
+        "var_periodo":sf((tot_arr[-1] - tot_arr[0]) / tot_arr[0] * 100) if tot_arr[0] else 0,
+        "vol_anual":  sf(float(pl_arr.std()) * np.sqrt(252)),
+        "hit_rate":   sf(float((pl_arr > 0).sum()) / len(pl_arr) * 100) if len(pl_arr) else 0,
     }
 
-    # ── 9. Insights automáticos ───────────────────────────────────
+    # Insights
     insights = []
     idx_max = int(evol["pl"].idxmax())
     idx_min = int(evol["pl"].idxmin())
@@ -591,36 +755,41 @@ def build_json(m):
         f"Peor día: {sd(evol.iloc[idx_min]['Fecha_Posicion'])} → P&L ${evol.iloc[idx_min]['pl']:+,.0f}"})
     if stats["sharpe"]:
         tone = "positive" if stats["sharpe"] > 0.5 else "warning" if stats["sharpe"] > 0 else "negative"
-        insights.append({"tipo":tone,"txt":f"Sharpe anualizado del período: {stats['sharpe']:.3f}"})
+        insights.append({"tipo":tone,"txt":f"Sharpe anualizado: {stats['sharpe']:.3f}"})
     if stats["drawdown"] and stats["drawdown"] > 0.5:
-        insights.append({"tipo":"warning","txt":f"Máximo drawdown del período: {stats['drawdown']:.2f}%"})
+        insights.append({"tipo":"warning","txt":f"Máx. drawdown: {stats['drawdown']:.2f}%"})
     if fx_pct and fx_pct > 1:
-        insights.append({"tipo":"info","txt":f"Exposición en moneda extranjera: {fx_pct:.1f}% del portafolio"})
+        insights.append({"tipo":"info","txt":f"Exposición FX: {fx_pct:.1f}% del portafolio"})
     if tir_p:
-        insights.append({"tipo":"info","txt":f"TIR ponderada de renta fija: {tir_p:.2f}%"})
+        insights.append({"tipo":"info","txt":f"TIR ponderada RF: {tir_p:.2f}%"})
     vcto_90 = hoy[(hoy.get("Dias_Vcto", pd.Series(dtype=float)).fillna(999) < 90) &
                   (hoy.get("Dias_Vcto", pd.Series(dtype=float)).fillna(999) > 0)] \
         if "Dias_Vcto" in hoy.columns else pd.DataFrame()
     if len(vcto_90):
-        v90_val = vcto_90["Vlr_Mer_Hoy"].sum()
         insights.append({"tipo":"warning","txt":
-            f"{len(vcto_90)} posiciones vencen <90 días (${v90_val:,.0f})"})
-    if stats["pl_acum"] and stats["pl_acum"] < 0:
-        insights.append({"tipo":"negative","txt":
-            f"P&L acumulado del período negativo: ${stats['pl_acum']:+,.0f}"})
-    else:
-        insights.append({"tipo":"positive","txt":
-            f"P&L acumulado del período: ${stats['pl_acum']:+,.0f}"})
+            f"{len(vcto_90)} posiciones vencen en <90 días (${vcto_90['Vlr_Mer_Hoy'].sum():,.0f})"})
+    pl_ac = stats["pl_acum"]
+    if pl_ac is not None:
+        tone = "positive" if pl_ac >= 0 else "negative"
+        insights.append({"tipo":tone,"txt":f"P&L acumulado período: ${pl_ac:+,.0f}"})
+    if stats["hit_rate"] is not None:
+        insights.append({"tipo":"info","txt":
+            f"Hit rate: {stats['hit_rate']:.1f}% días positivos de {stats['dias_tot']}"})
+
+    # Tabla raw para caché incremental — guarda todas las columnas calculadas
+    raw_tabla = [_raw_row(r) for _, r in m.iterrows()]
 
     return {
         "meta": {
-            "generado":   datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
-            "org":        CFG["org"],
-            "sub":        CFG["sub"],
-            "ultimo_dia": sd(ult),
-            "primer_dia": sd(fechas_ord[0]),
+            "generado":    datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
+            "org":         CFG["org"],
+            "sub":         CFG["sub"],
+            "ultimo_dia":  sd(ult),
+            "primer_dia":  sd(fechas_ord[0]),
+            "n_fechas":    len(fechas_ord),
+            "data_url":    CFG.get("github_data_url",""),
         },
-        "fechas":    [sd(d) for d in evol["Fecha_Posicion"]],
+        "fechas":     [sd(d) for d in evol["Fecha_Posicion"]],
         "kpis": {
             "total":tot,"ant":ant,"pl":pl_d,"var_pct":var_p,
             "caus_mer":caus_d,"caus_tir":caus_t,
@@ -629,10 +798,11 @@ def build_json(m):
             "n_pos":n_pos,"tir_pond":tir_p,
             "dur_pond":dur_p,"fx_total":fx_total,"fx_pct":fx_pct,
         },
-        "stats":     stats,
-        "insights":  insights,
+        "stats":      stats,
+        "insights":   insights,
         "evol": {
             "total":    [sf(v) for v in evol["total"]],
+            "nominal":  [sf(v) for v in evol["nominal"]],
             "pl":       [sf(v) for v in evol["pl"]],
             "pl_acum":  [sf(v) for v in evol["pl_acum"]],
             "caus_mer": [sf(v) for v in evol["caus_mer"]],
@@ -643,108 +813,228 @@ def build_json(m):
             "rend_pct": [sf(v) for v in evol["rend_pct"]],
             "n":        [int(v) for v in evol["n"]],
         },
-        "ports":     ports_u,
-        "tipos":     tipos_u,
-        "evol_port": evol_port,
-        "evol_tipo": evol_tipo,
-        "caus_hist": caus_hist,
-        "esp_hist":  esp_hist,
-        "by_port":   by_port,
-        "by_tipo":   by_tipo,
-        "by_mon":    by_mon,
-        "by_act":    by_act,
-        "by_mod":    by_mod,
-        "comp":      comp,
-        "tabla":     tabla,
-        "tes":       tes,
+        "ports":      ports_u,
+        "tipos":      tipos_u,
+        "evol_port":  evol_port,
+        "evol_tipo":  evol_tipo,
+        "caus_hist":  caus_hist,
+        "esp_hist":   esp_hist,
+        "by_port":    by_port,
+        "by_tipo":    by_tipo,
+        "by_mon":     by_mon,
+        "by_act":     by_act,
+        "by_mod":     by_mod,
+        "comp":       comp,
+        "tabla":      tabla,
+        "tes":        tes,
+        "extras":     _build_extras(m, hoy, evol, fechas_ord),
+        # Datos crudos para caché incremental (no se usan en el dashboard)
+        "_raw_tabla": raw_tabla,
     }
 
-# ── Git push ──────────────────────────────────────────────────────
+# ══════════════════════════════════════════════════════════════════
+#  HELPERS GIT
+# ══════════════════════════════════════════════════════════════════
 
-def git_push(files):
-    repo  = ROOT
-    fecha = datetime.now().strftime("%Y-%m-%d %H:%M")
-    msg   = CFG["git_msg"].format(fecha=fecha)
+def _git(args, **kw):
+    return subprocess.run(["git","-C",ROOT]+args, capture_output=True, text=True, **kw)
+
+def get_github_info():
+    """Devuelve (user, repo, branch) desde el remote origin, o None."""
+    r = _git(["remote","get-url","origin"])
+    remote = r.stdout.strip()
+    m = re.search(r"github\.com[:/]([^/]+)/([^/.]+?)(?:\.git)?$", remote)
+    if not m:
+        return None, None, None
+    branch = CFG.get("git_branch","main")
+    return m.group(1), m.group(2), branch
+
+def ensure_gitignore():
+    """Crea o actualiza .gitignore para excluir archivos locales innecesarios."""
+    gi_path = os.path.join(ROOT, ".gitignore")
+    lines_needed = [
+        "__pycache__/", "*.pyc", "*.pyo",
+        ".cache_procesado.json",
+        "posiciones_consolidadas.xlsx",
+        "watcher.log",
+        "*.log",
+        # NO ignoramos data.json ni index.html — deben subir a GitHub Pages
+    ]
+    existing = set()
+    if os.path.exists(gi_path):
+        with open(gi_path, encoding="utf-8") as f:
+            existing = {l.strip() for l in f if l.strip()}
+    nuevos = [l for l in lines_needed if l not in existing]
+    if nuevos:
+        with open(gi_path, "a", encoding="utf-8") as f:
+            if existing:
+                f.write("\n")
+            f.write("\n".join(nuevos) + "\n")
+        print(f"  .gitignore actualizado (+{len(nuevos)} entradas)")
+    return gi_path
+
+def git_push_files(files, msg):
+    """Hace add+commit+push de los archivos indicados."""
     for f in files:
-        subprocess.run(["git","-C",repo,"add",os.path.relpath(f, repo)],
-                       capture_output=True)
-    r = subprocess.run(["git","-C",repo,"commit","-m",msg], capture_output=True, text=True)
-    ok = r.returncode == 0 or "nothing to commit" in r.stdout + r.stderr
-    print(f"  git commit: {'OK' if ok else r.stderr.strip()}")
-    r = subprocess.run(["git","-C",repo,"push"], capture_output=True, text=True)
-    print(f"  git push:   {'OK' if r.returncode==0 else r.stderr.strip()}")
+        if os.path.exists(f):
+            rel = os.path.relpath(f, ROOT)
+            r = _git(["add", rel])
+            if r.returncode != 0:
+                print(f"  [WARN] git add {rel}: {r.stderr.strip()}")
 
-# ── Main ──────────────────────────────────────────────────────────
+    r = _git(["commit","-m", msg])
+    committed = r.returncode == 0
+    nothing   = "nothing to commit" in r.stdout + r.stderr
+    if committed:
+        print(f"  git commit: OK")
+    elif nothing:
+        print(f"  git commit: sin cambios nuevos")
+    else:
+        print(f"  git commit: {r.stderr.strip()}")
+
+    r = _git(["push"])
+    if r.returncode == 0:
+        print("  git push:   OK ✓")
+        return True
+    else:
+        print(f"  git push:   ERROR — {r.stderr.strip()}")
+        return False
+
+# ══════════════════════════════════════════════════════════════════
+#  MAIN
+# ══════════════════════════════════════════════════════════════════
 
 def main():
     print("=" * 64)
-    print(" SAPIENZA — Procesador de Posiciones de Portafolio")
-    print(f" Carpeta datos: {ROOT}")
+    print(" SAPIENZA — Procesador de Posiciones")
+    print(f" Carpeta: {ROOT}")
     print("=" * 64 + "\n")
 
-    # 1. Convertir CSV → XLSX
-    print("[1/4] Convirtiendo CSV a XLSX...")
-    convertir_csvs()
+    # ── 0. Setup inicial ─────────────────────────────────────────
+    cache = cargar_cache()
+    print(f"[0/5] Caché: {len(cache)} archivos registrados")
 
-    # 2. Cargar todos los XLSX
-    print("\n[2/4] Cargando datos...")
-    master = cargar()
+    gi_path = ensure_gitignore()
 
-    # 3. Construir JSON
-    print("\n[3/4] Construyendo JSON de datos...")
+    # Detectar GitHub remote automáticamente
+    gh_user, gh_repo, gh_branch = get_github_info()
+    if gh_user:
+        # El index.html y data.json están en el mismo dominio de GitHub Pages,
+        # así que fetch("./data.json") funciona sin CORS.
+        pages_url   = f"https://{gh_user}.github.io/{gh_repo}/"
+        data_json_url = f"https://{gh_user}.github.io/{gh_repo}/data.json"
+        print(f"  GitHub Pages → {pages_url}")
+    else:
+        pages_url     = ""
+        data_json_url = ""
+        print("  [WARN] No se detectó remote GitHub. Modo offline.")
+
+    # ── 1. CSV → XLSX ────────────────────────────────────────────
+    print("\n[1/5] Convirtiendo CSV a XLSX...")
+    convertir_csvs(cache)
+
+    # ── 2. Cargar datos (caché incremental) ──────────────────────
+    print("\n[2/5] Cargando datos...")
+    master, hay_nuevos = cargar(cache)
+
+    if not hay_nuevos:
+        print("\n  ✓ Sin archivos nuevos — data.json ya está actualizado.")
+        if CFG["git_push"] and gh_user:
+            # Aún así regeneramos el HTML por si el template cambió
+            print("  Regenerando index.html por si el template cambió...")
+        else:
+            import webbrowser; webbrowser.open(CFG["output_html"]); return
+
+    # ── 3. Guardar caché ─────────────────────────────────────────
+    guardar_cache(cache)
+    print(f"\n  Caché guardado ({len(cache)} entradas)")
+
+    # ── 4. Construir data.json ───────────────────────────────────
+    print("\n[3/5] Construyendo data.json...")
     data = build_json(master)
 
     json_out = CFG["output_json"]
     with open(json_out, "w", encoding="utf-8") as f:
-        json.dump(data, f, ensure_ascii=False, separators=(",",":"), default=str)
-    print(f"  data.json: {os.path.getsize(json_out)//1024} KB")
+        # _raw_tabla es solo para caché local; no lo necesita el dashboard
+        data_pub = {k:v for k,v in data.items() if k != "_raw_tabla"}
+        json.dump(data_pub, f, ensure_ascii=False, separators=(",",":"), default=str)
+    kb_json = os.path.getsize(json_out) // 1024
+    print(f"  data.json  : {kb_json} KB  ({data['meta']['n_fechas']} fechas)")
 
-    # 4. Generar HTML
-    print("\n[4/4] Generando index.html...")
+    # ── 5. Generar index.html ────────────────────────────────────
+    # El HTML publicado siempre es LIGERO: hace fetch("./data.json")
+    # que en GitHub Pages carga del mismo dominio sin CORS.
+    # Solo se incluye el JSON inline si NO hay GitHub configurado.
+    print("\n[4/5] Generando index.html...")
     tpl_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), "_dashboard_tpl.html")
     if not os.path.exists(tpl_path):
-        raise SystemExit(f"[ERROR] No se encuentra la plantilla: {tpl_path}")
+        raise SystemExit(f"[ERROR] Plantilla no encontrada: {tpl_path}")
     with open(tpl_path, "r", encoding="utf-8") as f:
         tpl = f.read()
 
-    data_str = json.dumps(data, ensure_ascii=False, separators=(",",":"), default=str)
-    html = tpl.replace("__DATA_JSON__", data_str).replace("__ORG__", CFG["org"])
+    if gh_user:
+        # ── Modo REMOTO (GitHub Pages) ────────────────────────────
+        # index.html hace fetch("./data.json") — mismo dominio, sin CORS
+        html = (tpl
+            .replace("__DATA_JSON__", "null")
+            .replace("__DATA_URL__",  "./data.json")   # URL relativa
+            .replace("__ORG__",       CFG["org"])
+            .replace("__MODO_REMOTO__", "true"))
+        modo_txt = f"REMOTO  →  fetch('./data.json') en GitHub Pages"
+    else:
+        # ── Modo INLINE (sin GitHub) ──────────────────────────────
+        data_str = json.dumps(data_pub, ensure_ascii=False,
+                              separators=(",",":"), default=str)
+        html = (tpl
+            .replace("__DATA_JSON__", data_str)
+            .replace("__DATA_URL__",  "")
+            .replace("__ORG__",       CFG["org"])
+            .replace("__MODO_REMOTO__", "false"))
+        modo_txt = "INLINE  (sin GitHub configurado)"
+
     html_out = CFG["output_html"]
     with open(html_out, "w", encoding="utf-8") as f:
         f.write(html)
-    print(f"  index.html: {os.path.getsize(html_out)//1024} KB")
+    kb_html = os.path.getsize(html_out) // 1024
+    print(f"  index.html : {kb_html} KB   [{modo_txt}]")
 
-    # Resumen en consola
+    # ── Resumen ──────────────────────────────────────────────────
     k = data["kpis"]; s = data["stats"]
-    print(f"\n{'='*64}")
+    print(f"\n{'─'*64}")
     print(f"  Fecha posicion   : {data['meta']['ultimo_dia']}")
     print(f"  Total portafolio : ${k['total']:>22,.0f}")
     print(f"  P&L del dia      : ${k['pl']:>+22,.0f}  ({k['var_pct']:+.3f}%)")
     print(f"  P&L acumulado    : ${s['pl_acum']:>+22,.0f}")
-    print(f"  Causacion (mer)  : ${k['caus_mer']:>22,.0f}")
-    print(f"  Causacion (TIR)  : ${k['caus_tir']:>22,.0f}")
-    print(f"  TIR ponderada    :  {str(k['tir_pond'])+'%':>23}")
-    print(f"  Drawdown max     :  {str(s['drawdown'])+'%':>23}")
-    print(f"  Sharpe anualiz.  :  {str(s['sharpe']):>23}")
+    print(f"  Hit rate         : {s.get('hit_rate',0):.1f}%   Sharpe: {s['sharpe']}")
+    print(f"  TIR ponderada    : {str(k['tir_pond'])+'%':>24}")
+    print(f"  Drawdown max     : {str(s['drawdown'])+'%':>24}")
     print(f"  Exp. FX          : ${k['fx_total']:>22,.0f}  ({k['fx_pct']:.1f}%)")
-    print(f"{'='*64}")
+    print(f"{'─'*64}")
 
-    # Git push
+    # ── 5. Git push ───────────────────────────────────────────────
     if CFG["git_push"]:
-        print("\n[Git] Subiendo a GitHub...")
-        git_push([html_out, json_out])
-        r = subprocess.run(["git","-C",ROOT,"remote","get-url","origin"],
-                           capture_output=True, text=True)
-        remote = r.stdout.strip()
-        if "github.com" in remote:
-            m2 = re.search(r"github\.com[:/]([^/]+)/([^/.]+)", remote)
-            if m2:
-                user, repo = m2.group(1), m2.group(2)
-                print(f"\n  URL del dashboard:")
-                print(f"  https://{user}.github.io/{repo}/")
+        print("\n[5/5] Subiendo a GitHub...")
+        fecha  = datetime.now().strftime("%Y-%m-%d %H:%M")
+        msg    = CFG["git_msg"].format(fecha=fecha)
+        # Subimos: index.html + data.json + .gitignore
+        # NO subimos: .cache_procesado.json (está en .gitignore)
+        files  = [html_out, json_out, gi_path]
+        ok     = git_push_files(files, msg)
+
+        if ok and gh_user:
+            print(f"\n  ╔═══════════════════════════════════════════════════╗")
+            print(f"  ║  Dashboard publicado en GitHub Pages              ║")
+            print(f"  ╠═══════════════════════════════════════════════════╣")
+            print(f"  ║  {pages_url:<49} ║")
+            print(f"  ╚═══════════════════════════════════════════════════╝")
+            print(f"\n  Comparte esa URL — se actualiza sola cada vez que")
+            print(f"  corras este script y hagas push.")
+    else:
+        print("\n[5/5] Git push desactivado (CFG['git_push'] = False).")
 
     import webbrowser
     webbrowser.open(html_out)
+    print("\n  Abriendo dashboard local…")
 
 
 if __name__ == "__main__":

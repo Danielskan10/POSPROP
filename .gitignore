@@ -1,0 +1,28 @@
+# Python
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+.Python
+*.egg-info/
+
+# Caché incremental del procesador (solo local, nunca a GitHub)
+.cache_procesado.json
+
+# Archivos locales que no se publican
+posiciones_consolidadas.xlsx
+watcher.log
+*.log
+
+# XLSX convertidos desde CSV (los CSV originales ya están en git)
+# Comentar esta línea si quieres subir los XLSX también
+02 February/*.xlsx
+*.xlsx
+!575 20260201.xlsx
+!575 20260202.xlsx
+!575 20260203.xlsx
+
+# Sistema operativo
+.DS_Store
+Thumbs.db
+desktop.ini
