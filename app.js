@@ -180,8 +180,97 @@ function dateL(arr){ return arr.map(f=>f.slice(5).replace('-','/')); }
 // ─── BADGE ────────────────────────────────────────────────────
 const BCL={TES:'b-tes',Fondos:'b-fnd',Liquidez:'b-liq',Derivados:'b-der',
   AOR:'b-aor',TIDIS:'b-tid',CDT:'b-cdt',Acciones:'b-acc',Titularizaciones:'b-tid'};
-function bdg(t){ return `<span class="bdg ${BCL[t]||'b-oth'}">${t||'—'}</span>`; }
-function estC(e){ const m={'En Cartera':'est-r','Pendiente':'est-p','Vendido':'est-v'}; return `<span class="${m[e]||''}">${e||'—'}</span>`; }
+function bdg(t){ return '<span class="bdg '+(BCL[t]||'b-oth')+'">'+(t||'—')+'</span>'; }
+function estC(e){ const m={'En Cartera':'est-r','Pendiente':'est-p','Vendido':'est-v'}; return '<span class="'+(m[e]||'')+'">'+( e||'—')+'</span>'; }
+
+// ─── TABLA ORDENABLE REUTILIZABLE ─────────────────────────────
+// sortTable(containerId, cols, rows, renderFn, extraFooter?)
+// cols: [{key, label, cls:'r'|'', fmt:fn}]
+// rows: array de objetos
+// Guarda estado de sort por tabla en S.tableSort
+function sortTable(cid, cols, rows, renderFn, footerHtml){
+  if(!S.tableSort) S.tableSort={};
+  const st=S.tableSort[cid]||(S.tableSort[cid]={k:cols[0].key,d:-1});
+
+  const sorted=[...rows].sort((a,b)=>{
+    const av=a[st.k],bv=b[st.k];
+    if(av==null&&bv==null)return 0;
+    if(av==null)return 1; if(bv==null)return -1;
+    if(typeof av==='string') return av.localeCompare(bv)*st.d;
+    return (av-bv)*st.d;
+  });
+
+  const head=cols.map(c=>{
+    const active=st.k===c.key;
+    const arrow=active?(st.d>0?' ▲':' ▼'):'';
+    const cls=(c.cls||'')+(active?' col-sorted':'');
+    return '<th class="'+(c.cls||'')+'" onclick="sortTableCol(\''+cid+'\',\''+c.key+'\','+
+      JSON.stringify(cols)+')">'+c.label+arrow+'</th>';
+  }).join('');
+
+  const body=sorted.map(renderFn).join('');
+  const cont=document.getElementById(cid);
+  if(!cont)return;
+  cont.innerHTML='<table><thead><tr>'+head+'</tr></thead><tbody>'+body+'</tbody>'+
+    (footerHtml?'<tfoot>'+footerHtml+'</tfoot>':'')+'</table>';
+}
+
+function sortTableCol(cid,key,cols){
+  if(!S.tableSort)S.tableSort={};
+  const st=S.tableSort[cid]||(S.tableSort[cid]={k:cols[0].key,d:-1});
+  if(st.k===key) st.d*=-1; else{st.k=key;st.d=-1;}
+  S.tableSort[cid]=st;
+  // Re-renderizar la tabla (llamar de nuevo la función que la creó)
+  const ev=window['_lastRender_'+cid];
+  if(ev) ev();
+}
+
+// ─── DRILL-DOWN DE ESPECIES ────────────────────────────────────
+// Muestra tabla de especies al hacer click en una fila de resumen
+function drillDown(containerId, groupKey, groupVal, title){
+  const rows=FD().filter(r=>r[groupKey]===groupVal);
+  if(!rows.length) return;
+
+  // Si ya está abierto el mismo, cerrarlo
+  const existing=document.getElementById('drill-'+containerId);
+  if(existing && existing.dataset.group===groupVal){
+    existing.remove(); return;
+  }
+  if(existing) existing.remove();
+
+  const total=rows.reduce((a,r)=>a+(r.valor||0),0);
+  const sortedR=[...rows].sort((a,b)=>(b.valor||0)-(a.valor||0));
+
+  let html='<div id="drill-'+containerId+'" data-group="'+escAttr(groupVal)+'" class="drill-panel">';
+  html+='<div class="drill-header">';
+  html+='<span class="drill-title">'+escHtml(title)+' — '+escHtml(groupVal)+'</span>';
+  html+='<span class="drill-count">'+rows.length+' instrumentos · '+fC(total)+'</span>';
+  html+='<button class="drill-close" onclick="this.closest(\'.drill-panel\').remove()">✕</button>';
+  html+='</div>';
+  html+='<div class="twrap" style="max-height:280px"><table>';
+  html+='<thead><tr><th>Especie</th><th>ISIN</th><th>Tipo</th><th class="r">Valor Mdo</th>';
+  html+='<th class="r">P&L</th><th class="r">TIR%</th><th>Vencimiento</th><th>Estado</th></tr></thead><tbody>';
+  sortedR.forEach(r=>{
+    const plCls=clr(r.pl);
+    html+='<tr>';
+    html+='<td class="main" title="'+escAttr(r.esp)+'">'+(r.esp.length>28?r.esp.slice(0,28)+'…':escHtml(r.esp))+'</td>';
+    html+='<td class="mono">'+(r.isin||'—')+'</td>';
+    html+='<td>'+bdg(r.tipo)+'</td>';
+    html+='<td class="r">'+fC(r.valor)+'</td>';
+    html+='<td class="'+plCls+'">'+(r.pl!=null?sgn(r.pl)+fC(r.pl):'—')+'</td>';
+    html+='<td class="r" style="color:var(--b)">'+(r.tir&&r.tir>0.0001?fP(r.tir*100):'—')+'</td>';
+    html+='<td style="font-size:11px">'+(r.vcto||'—')+'</td>';
+    html+='<td>'+estC(r.est)+'</td>';
+    html+='</tr>';
+  });
+  html+='</tbody></table></div></div>';
+
+  const target=document.getElementById(containerId);
+  if(target) target.insertAdjacentHTML('afterend', html);
+}
+
+function escAttr(s){ return String(s||'').replace(/&/g,'&amp;').replace(/"/g,'&quot;'); }
+function escHtml(s){ return String(s||'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;'); }
 
 // ─── FILTROS ──────────────────────────────────────────────────
 function initFilters(){
@@ -226,8 +315,32 @@ function FD(){ // filtered data (último día)
 function FF(){ // filtered fechas
   return D.fechas.filter(f=>f>=S.f.desde&&f<=S.f.hasta);
 }
-function FE(){ // filtered evol slices
+function FE(){ // filtered evol slices — respeta filtro de portafolio
   const fs=FF(), idxs=fs.map(f=>D.fechas.indexOf(f));
+
+  if(S.f.port && D.evol_port[S.f.port]){
+    // Si hay portafolio filtrado, usar la serie de ese portafolio
+    const ep=D.evol_port[S.f.port];
+    const sl=k=>idxs.map(i=>(ep[k]||[])[i]??null);
+    // Calcular acumulados desde la serie filtrada
+    const pl_arr=sl('pl');
+    const pl_acum=pl_arr.reduce((a,v,i)=>{a.push((a[i-1]||0)+(v||0));return a;},[]);
+    const caus_hist=D.caus_hist?.[S.f.port]||{};
+    return {
+      fechas:fs,
+      total:sl('total'), nominal:sl('nominal'),
+      pl:pl_arr, pl_acum,
+      caus_mer: idxs.map(i=>(caus_hist.mer||[])[i]??null),
+      caus_tir: idxs.map(i=>(caus_hist.tir||[])[i]??null),
+      caus_mon: idxs.map(i=>(caus_hist.mon||[])[i]??null),
+      caus_tasa:idxs.map(i=>(caus_hist.tasa||[])[i]??null),
+      caus_acum:idxs.map(i=>(caus_hist.mer||[])[i]??null).reduce((a,v,i)=>{a.push((a[i-1]||0)+(v||0));return a;},[]),
+      rend_pct: pl_arr.map((v,i)=>{const t=sl('total')[i-1];return t?v/t*100:null;}),
+      n:sl('n')||idxs.map(()=>null),
+    };
+  }
+
+  // Sin filtro de portafolio: datos globales
   const sl=k=>idxs.map(i=>(D.evol[k]||[])[i]);
   return {fechas:fs,total:sl('total'),pl:sl('pl'),pl_acum:sl('pl_acum'),
     caus_mer:sl('caus_mer'),caus_tir:sl('caus_tir'),caus_mon:sl('caus_mon'),
@@ -532,25 +645,67 @@ function _renderComp(){
     scales:{x:{ticks:{callback:v=>fmt(v),color:tx2(),font:{size:10.5}},grid:{color:gc(),drawBorder:false}},
             y:{ticks:{color:tx2(),font:{size:10.5}},grid:{display:false}}}}});
 
-  // Tabla
-  const colsExtra = _compSub==='vcto'?'':
-    `<th class="r">P&L Día</th><th class="r">Caus. Mer</th><th class="r">Causación FX</th>`;
-  document.getElementById('compTableHead').innerHTML=
-    `<th>${cfg.colLabel}</th><th class="r">Valor Mercado</th><th class="r">%</th>${colsExtra}<th class="r">N°</th>`;
-  document.getElementById('compTableBody').innerHTML=sorted.map(([k,b],i)=>{
-    const pct=ttl?b.total/ttl*100:0;
-    const dot=`<span style="display:inline-block;width:8px;height:8px;border-radius:50%;background:${colors[i]};margin-right:5px;flex-shrink:0"></span>`;
-    const extras=_compSub==='vcto'?'':
-      `<td class="${clr(b.pl)}">${sgn(b.pl)}${fC(b.pl)}</td><td class="${clr(b.cmer)}">${fC(b.cmer)}</td><td class="${clr(b.cmon)}">${fC(b.cmon)}</td>`;
-    return`<tr><td>${dot}${k}</td><td class="r">${fC(b.total)}</td><td class="r">${fP(pct)}</td>${extras}<td class="r">${b.n}</td></tr>`;
-  }).join('');
-  document.getElementById('compTableFoot').innerHTML=
-    `<td>TOTAL</td><td class="r">${fC(ttl)}</td><td class="r">100%</td>`+
-    (_compSub==='vcto'?'':
-      `<td class="${clr(sorted.reduce((a,[,b])=>a+b.pl,0))}">${sgn(sorted.reduce((a,[,b])=>a+b.pl,0))}${fC(sorted.reduce((a,[,b])=>a+b.pl,0))}</td>`+
-      `<td class="${clr(sorted.reduce((a,[,b])=>a+b.cmer,0))}">${fC(sorted.reduce((a,[,b])=>a+b.cmer,0))}</td>`+
-      `<td class="${clr(sorted.reduce((a,[,b])=>a+b.cmon,0))}">${fC(sorted.reduce((a,[,b])=>a+b.cmon,0))}</td>`)+
-    `<td class="r">${rows.length}</td>`;
+  // Tabla de composición — ordenable + drill-down al hacer click
+  const drillKey = {tipo:'tipo',port:'port',moneda:'moneda',vcto:null}[_compSub];
+  const hasExtras = _compSub!=='vcto';
+
+  // Cabecera con sort
+  const _compSortState = S.tableSort?.compTable || {k:'total',d:-1};
+  function _compSortIcon(k){ return _compSortState.k===k?(_compSortState.d>0?' ▲':' ▼'):''; }
+  function _compSort(k){ return 'onclick="_compSortBy(\''+k+'\')"'; }
+
+  let thead = '<th '+_compSort('label')+'>'+cfg.colLabel+_compSortIcon('label')+'</th>';
+  thead+='<th class="r" '+_compSort('total')+'>Valor Mercado'+_compSortIcon('total')+'</th>';
+  thead+='<th class="r" '+_compSort('pct')+'>%'+_compSortIcon('pct')+'</th>';
+  if(hasExtras){
+    thead+='<th class="r" '+_compSort('pl')+'>P&L Día'+_compSortIcon('pl')+'</th>';
+    thead+='<th class="r" '+_compSort('cmer')+'>Caus. Mer'+_compSortIcon('cmer')+'</th>';
+    thead+='<th class="r" '+_compSort('cmon')+'>FX'+_compSortIcon('cmon')+'</th>';
+  }
+  thead+='<th class="r" '+_compSort('n')+'>#'+_compSortIcon('n')+'</th>';
+  if(drillKey) thead+='<th></th>';
+  document.getElementById('compTableHead').innerHTML=thead;
+
+  // Construir filas con soporte de ordenamiento
+  const rowData=sorted.map(([k,b],i)=>({label:k,total:b.total,pl:b.pl,cmer:b.cmer,cmon:b.cmon,n:b.n,pct:ttl?b.total/ttl*100:0,col:colors[i]}));
+  const sortedRows=[...rowData].sort((a,b2)=>{
+    const av=a[_compSortState.k],bv=b2[_compSortState.k];
+    if(av==null&&bv==null)return 0; if(av==null)return 1; if(bv==null)return -1;
+    if(typeof av==='string') return av.localeCompare(bv)*_compSortState.d;
+    return (av-bv)*_compSortState.d;
+  });
+
+  let tbody='';
+  sortedRows.forEach(function(r){
+    const drillId='comp-drill-'+_compSub;
+    tbody+='<tr'+(drillKey?' class="drill-row" onclick="drillDown(\''+drillId+'\',\''+drillKey+'\',\''+escAttr(r.label)+'\',\''+escAttr(cfg.colLabel)+'\')"':'')+' title="'+(drillKey?'Click para ver instrumentos':'')+'">';
+    tbody+='<td><span style="display:inline-block;width:8px;height:8px;border-radius:50%;background:'+r.col+';margin-right:5px"></span>'+escHtml(r.label)+'</td>';
+    tbody+='<td class="r">'+fC(r.total)+'</td>';
+    tbody+='<td class="r">'+fP(r.pct)+'</td>';
+    if(hasExtras){
+      tbody+='<td class="'+clr(r.pl)+'">'+sgn(r.pl)+fC(r.pl)+'</td>';
+      tbody+='<td class="'+clr(r.cmer)+'">'+fC(r.cmer)+'</td>';
+      tbody+='<td class="'+clr(r.cmon)+'">'+fC(r.cmon)+'</td>';
+    }
+    tbody+='<td class="r">'+r.n+'</td>';
+    if(drillKey) tbody+='<td style="color:var(--tx3);font-size:10px">▼</td>';
+    tbody+='</tr>';
+  });
+  document.getElementById('compTableBody').innerHTML=tbody;
+
+  // Pie
+  const sumPl=rowData.reduce((a,r)=>a+r.pl,0);
+  const sumCmer=rowData.reduce((a,r)=>a+r.cmer,0);
+  const sumCmon=rowData.reduce((a,r)=>a+r.cmon,0);
+  let tfoot='<td>TOTAL</td><td class="r">'+fC(ttl)+'</td><td class="r">100%</td>';
+  if(hasExtras){
+    tfoot+='<td class="'+clr(sumPl)+'">'+sgn(sumPl)+fC(sumPl)+'</td>';
+    tfoot+='<td class="'+clr(sumCmer)+'">'+fC(sumCmer)+'</td>';
+    tfoot+='<td class="'+clr(sumCmon)+'">'+fC(sumCmon)+'</td>';
+  }
+  tfoot+='<td class="r">'+rows.length+'</td>';
+  if(drillKey) tfoot+='<td></td>';
+  document.getElementById('compTableFoot').innerHTML=tfoot;
 
   // Cross portafolio × tipo (siempre visible)
   _buildCrossTable();
@@ -590,6 +745,13 @@ function _buildVctoBucket(){
   }]},options:{...CHART_DEFAULTS,plugins:{legend:{display:false},tooltip:{...tipBI(),callbacks:{label:c=>`${fC(c.raw)}  (${vb.n[c.dataIndex]} posic.)`}}},scales:axO()}});
 }
 
+function _compSortBy(k){
+  if(!S.tableSort)S.tableSort={};
+  const st=S.tableSort.compTable||(S.tableSort.compTable={k:'total',d:-1});
+  if(st.k===k) st.d*=-1; else{st.k=k;st.d=-1;}
+  S.tableSort.compTable=st;
+  _renderComp();
+}
 function initComposicion(){ _compSub='tipo'; _renderComp(); }
 
 // ════════════════════════════════════════════════════════════
@@ -652,34 +814,203 @@ function initEvolucion(){
       backgroundColor:'transparent',tension:.4,pointRadius:0,borderWidth:1.5,borderDash:[5,3]},
   ]},options:{...CHART_DEFAULTS,plugins:{legend:leg('top'),tooltip:tipBI()},scales:axO()}});
 
-  // Cambios detectados
-  const allEsp=[...new Set(applyTipoMap(D.tabla).map(r=>r.esp))];
-  const cambios=[];
-  allEsp.forEach(esp=>{
-    const h=D.esp_hist[esp]; if(!h) return;
-    const filtF=FF();
-    const idx0=h.fechas.indexOf(filtF[0]);
-    const idxN=h.fechas.indexOf(filtF[filtF.length-1]);
-    if(idx0<0||idxN<0) return;
-    const v0=h.total[idx0]||0, vN=h.total[idxN]||0;
-    const plTotal=filtF.reduce((a,f)=>{const i=h.fechas.indexOf(f);return a+(i>=0?(h.pl[i]||0):0);},0);
-    const row=applyTipoMap(D.tabla).find(r=>r.esp===esp);
-    const varPct=v0?(vN-v0)/v0*100:0;
-    if(Math.abs(varPct)>0.5||row?.est==='Vendido')
-      cambios.push({esp,port:row?.port||'',tipo:row?.tipo||'',est:row?.est||'',v0,vN,varPct,plTotal});
-  });
-  cambios.sort((a,b)=>Math.abs(b.varPct)-Math.abs(a.varPct));
-  document.getElementById('tCambios').innerHTML=cambios.slice(0,40).map(c=>
-    `<tr><td class="main" title="${c.esp}">${c.esp.length>28?c.esp.slice(0,28)+'…':c.esp}</td>
-    <td>${c.port}</td><td>${bdg(c.tipo)}</td><td>${estC(c.est)}</td>
-    <td class="r">${fC(c.v0)}</td><td class="r">${fC(c.vN)}</td>
-    <td class="${clr(c.varPct)}">${sgn(c.varPct)}${fP(c.varPct)}</td>
-    <td class="${clr(c.plTotal)}">${sgn(c.plTotal)}${fC(c.plTotal)}</td></tr>`
-  ).join('');
+  // Tabla de movimientos — ordenable
+  _renderCambiosTable();
 }
 
 // Alias para compatibilidad con RE() que lee S.evol
 function initEvolutivo(){ initEvolucion(); }
+
+// ════════════════════════════════════════════════════════════
+// ─── TABLAS ORDENABLES DE TABS ────────────────────────────────
+function _mkTableSort(key){
+  if(!S.tableSort)S.tableSort={};
+  return S.tableSort[key]||(S.tableSort[key]={k:null,d:-1});
+}
+function _sortRows(rows,st,defaultK){
+  const k=st.k||defaultK;
+  return [...rows].sort(function(a,b){
+    const av=a[k],bv=b[k];
+    if(av==null&&bv==null)return 0; if(av==null)return 1; if(bv==null)return -1;
+    if(typeof av==='string') return av.localeCompare(bv)*st.d;
+    return (av-bv)*st.d;
+  });
+}
+function _thSort(label,stKey,col,cls){
+  const st=_mkTableSort(stKey);
+  const active=(st.k||col)===col;
+  const arrow=active?(st.d>0?' ▲':' ▼'):'';
+  return '<th class="'+(cls||'')+'" onclick="_tblSort(\''+stKey+'\',\''+col+'\')" style="cursor:pointer">'+label+arrow+'</th>';
+}
+function _tblSort(stKey,col){
+  const st=_mkTableSort(stKey);
+  if((st.k||col)===col) st.d*=-1; else{st.k=col;st.d=-1;}
+  // Re-renderizar la tabla correspondiente
+  const renderMap={
+    caus:  function(){_renderCausTable(FD());},
+    rf:    function(){_renderRFTable(FD().filter(function(r){return ['TES','TIDIS','CDT','Titularizaciones'].includes(r.tipo);}));},
+    cambios: function(){_renderCambiosTable();},
+    detalle: function(){renderDetalle();}
+  };
+  if(renderMap[stKey]) renderMap[stKey]();
+}
+
+// Tabla de causaciones
+function _renderCausTable(rows){
+  const st=_mkTableSort('caus'); if(!st.k)st.k='caus_mer_abs';
+  const enriched=rows.map(function(r){return Object.assign({caus_mer_abs:Math.abs(r.caus_mer||0),diff:(r.caus_mer||0)-(r.caus_tir||0)},r);});
+  const sorted=_sortRows(enriched,st,'caus_mer_abs');
+
+  let head='<tr>';
+  head+=_thSort('Especie','caus','esp','');
+  head+=_thSort('Portafolio','caus','port','');
+  head+=_thSort('Tipo','caus','tipo','');
+  head+=_thSort('Caus. Mercado','caus','caus_mer','r');
+  head+=_thSort('Caus. TIR','caus','caus_tir','r');
+  head+=_thSort('Dif. M−TIR','caus','diff','r');
+  head+=_thSort('Caus. FX','caus','caus_mon','r');
+  head+=_thSort('Caus. Tasa','caus','caus_tasa','r');
+  head+=_thSort('Adeudados','caus','adeudados','r');
+  head+=_thSort('Valor Mdo','caus','valor','r');
+  head+='</tr>';
+
+  let body='';
+  sorted.slice(0,80).forEach(function(r){
+    const espS=r.esp.length>28?r.esp.slice(0,28)+'…':r.esp;
+    body+='<tr>';
+    body+='<td class="main" title="'+escAttr(r.esp)+'">'+espS+'</td>';
+    body+='<td>'+escHtml(r.port||'—')+'</td>';
+    body+='<td>'+bdg(r.tipo)+'</td>';
+    body+='<td class="'+clr(r.caus_mer)+'">'+fC(r.caus_mer)+'</td>';
+    body+='<td class="'+clr(r.caus_tir)+'">'+fC(r.caus_tir)+'</td>';
+    body+='<td class="'+clr(r.diff)+'">'+fC(r.diff)+'</td>';
+    body+='<td class="'+clr(r.caus_mon)+'">'+fC(r.caus_mon)+'</td>';
+    body+='<td class="'+clr(r.caus_tasa)+'">'+fC(r.caus_tasa)+'</td>';
+    body+='<td class="r">'+fC(r.adeudados)+'</td>';
+    body+='<td class="r">'+fC(r.valor)+'</td>';
+    body+='</tr>';
+  });
+
+  const container=document.getElementById('tCausBody');
+  if(container){
+    // Actualizar header también
+    const tbl=container.closest('table');
+    if(tbl){
+      const thead=tbl.querySelector('thead tr');
+      if(thead) thead.outerHTML=head;
+    }
+    container.innerHTML=body;
+  }
+}
+
+// Tabla de renta fija
+function _renderRFTable(rf){
+  const st=_mkTableSort('rf'); if(!st.k)st.k='valor';
+  const sorted=_sortRows(rf,st,'valor');
+
+  let head='<tr>';
+  head+=_thSort('ISIN','rf','isin','');
+  head+=_thSort('Especie','rf','esp','');
+  head+=_thSort('Portafolio','rf','port','');
+  head+=_thSort('Tipo','rf','tipo','');
+  head+=_thSort('Nominal','rf','nominal','r');
+  head+=_thSort('Precio','rf','precio','r');
+  head+=_thSort('TIR%','rf','tir','r');
+  head+=_thSort('Facial','rf','facial','');
+  head+=_thSort('Modalidad','rf','mod','');
+  head+=_thSort('Vencimiento','rf','vcto','');
+  head+=_thSort('Días','rf','dias_vcto','r');
+  head+=_thSort('Valor Mdo','rf','valor','r');
+  head+=_thSort('P&L','rf','pl','r');
+  head+=_thSort('Caus. Mer','rf','caus_mer','r');
+  head+=_thSort('Caus. TIR','rf','caus_tir','r');
+  head+=_thSort('Adeudados','rf','adeudados','r');
+  head+='</tr>';
+
+  let body='';
+  sorted.forEach(function(r){
+    body+='<tr>';
+    body+='<td class="mono">'+(r.isin||'—')+'</td>';
+    body+='<td class="main" title="'+escAttr(r.esp)+'">'+(r.esp.length>24?r.esp.slice(0,24)+'…':r.esp)+'</td>';
+    body+='<td>'+escHtml(r.port||'—')+'</td>';
+    body+='<td>'+bdg(r.tipo)+'</td>';
+    body+='<td class="r">'+fC(r.nominal)+'</td>';
+    body+='<td class="r">'+(r.precio!=null?r.precio.toFixed(3):'—')+'</td>';
+    body+='<td class="r" style="color:var(--b);font-weight:700">'+(r.tir&&r.tir>0.0001?fP(r.tir*100):'—')+'</td>';
+    body+='<td style="font-size:10px;color:var(--tx2)">'+(r.facial||'—')+'</td>';
+    body+='<td style="font-size:11px">'+(r.mod||'—')+'</td>';
+    body+='<td style="font-size:11px">'+(r.vcto||'—')+'</td>';
+    body+='<td class="r">'+(r.dias_vcto!=null?Math.round(r.dias_vcto):'—')+'</td>';
+    body+='<td class="r">'+fC(r.valor)+'</td>';
+    body+='<td class="'+clr(r.pl)+'">'+(r.pl!=null?sgn(r.pl)+fC(r.pl):'—')+'</td>';
+    body+='<td class="'+clr(r.caus_mer)+'">'+fC(r.caus_mer)+'</td>';
+    body+='<td class="'+clr(r.caus_tir)+'">'+fC(r.caus_tir)+'</td>';
+    body+='<td class="r">'+fC(r.adeudados)+'</td>';
+    body+='</tr>';
+  });
+
+  const container=document.getElementById('tRFBody');
+  if(container){
+    const tbl=container.closest('table');
+    if(tbl){const thead=tbl.querySelector('thead tr');if(thead)thead.outerHTML=head;}
+    container.innerHTML=body;
+  }
+}
+
+// Tabla de cambios / movimientos (Tab Evolución)
+function _renderCambiosTable(){
+  const allEsp=[...new Set(applyTipoMap(D.tabla).map(function(r){return r.esp;}))];
+  const cambios=[];
+  allEsp.forEach(function(esp){
+    const h=D.esp_hist[esp]; if(!h)return;
+    const filtF=FF();
+    const idx0=h.fechas.indexOf(filtF[0]);
+    const idxN=h.fechas.indexOf(filtF[filtF.length-1]);
+    if(idx0<0||idxN<0)return;
+    const v0=h.total[idx0]||0,vN=h.total[idxN]||0;
+    const plTotal=filtF.reduce(function(a,f){const i=h.fechas.indexOf(f);return a+(i>=0?(h.pl[i]||0):0);},0);
+    const row=applyTipoMap(D.tabla).find(function(r){return r.esp===esp;});
+    const varPct=v0?(vN-v0)/v0*100:0;
+    if(Math.abs(varPct)>0.5||row?.est==='Vendido')
+      cambios.push({esp,port:row?.port||'',tipo:row?.tipo||'',est:row?.est||'',v0,vN,varPct,plTotal});
+  });
+
+  const st=_mkTableSort('cambios'); if(!st.k)st.k='varPct_abs';
+  const enriched=cambios.map(function(c){return Object.assign({varPct_abs:Math.abs(c.varPct),plTotal_abs:Math.abs(c.plTotal)},c);});
+  const sorted=_sortRows(enriched,st,'varPct_abs');
+
+  let head='<tr>';
+  head+=_thSort('Especie','cambios','esp','');
+  head+=_thSort('Portafolio','cambios','port','');
+  head+=_thSort('Tipo','cambios','tipo','');
+  head+=_thSort('Estado','cambios','est','');
+  head+=_thSort('Valor Inicial','cambios','v0','r');
+  head+=_thSort('Valor Final','cambios','vN','r');
+  head+=_thSort('Variación %','cambios','varPct','r');
+  head+=_thSort('P&L Total','cambios','plTotal','r');
+  head+='</tr>';
+
+  let body='';
+  sorted.slice(0,60).forEach(function(c){
+    body+='<tr>';
+    body+='<td class="main" title="'+escAttr(c.esp)+'">'+(c.esp.length>28?c.esp.slice(0,28)+'…':c.esp)+'</td>';
+    body+='<td>'+escHtml(c.port)+'</td>';
+    body+='<td>'+bdg(c.tipo)+'</td>';
+    body+='<td>'+estC(c.est)+'</td>';
+    body+='<td class="r">'+fC(c.v0)+'</td>';
+    body+='<td class="r">'+fC(c.vN)+'</td>';
+    body+='<td class="'+clr(c.varPct)+'">'+sgn(c.varPct)+fP(c.varPct)+'</td>';
+    body+='<td class="'+clr(c.plTotal)+'">'+sgn(c.plTotal)+fC(c.plTotal)+'</td>';
+    body+='</tr>';
+  });
+
+  const container=document.getElementById('tCambios');
+  if(container){
+    const tbl=container.closest('table');
+    if(tbl){const thead=tbl.querySelector('thead tr');if(thead)thead.outerHTML=head;}
+    container.innerHTML=body;
+  }
+}
 
 // ════════════════════════════════════════════════════════════
 // TAB ④  RENDIMIENTO
@@ -763,19 +1094,8 @@ function initRendimiento(){
               y:{ticks:{color:tx2(),font:{size:10.5}},grid:{color:gc(),drawBorder:false}}}}});
   }
 
-  // Tabla causaciones
-  document.getElementById('tCausBody').innerHTML=
-    [...rows].sort((a,b)=>Math.abs(b.caus_mer||0)-Math.abs(a.caus_mer||0)).slice(0,60).map(r=>
-      `<tr><td class="main" title="${r.esp}">${r.esp.length>28?r.esp.slice(0,28)+'…':r.esp}</td>
-      <td>${r.port||'—'}</td><td>${bdg(r.tipo)}</td>
-      <td class="${clr(r.caus_mer)}">${fC(r.caus_mer)}</td>
-      <td class="${clr(r.caus_tir)}">${fC(r.caus_tir)}</td>
-      <td class="${clr((r.caus_mer||0)-(r.caus_tir||0))}">${fC((r.caus_mer||0)-(r.caus_tir||0))}</td>
-      <td class="${clr(r.caus_mon)}">${fC(r.caus_mon)}</td>
-      <td class="${clr(r.caus_tasa)}">${fC(r.caus_tasa)}</td>
-      <td class="r">${fC(r.adeudados)}</td>
-      <td class="r">${fC(r.valor)}</td></tr>`
-    ).join('');
+  // Tabla causaciones — ordenable
+  _renderCausTable(rows);
 }
 
 // Alias para compatibilidad (las funciones viejas podían llamarse)
@@ -866,24 +1186,8 @@ function initInstrumentos(){
     scales:{x:{ticks:{callback:v=>fmt(v),color:tx2(),font:{size:10.5}},grid:{color:gc(),drawBorder:false}},
             y:{ticks:{color:tx2(),font:{size:10.5}},grid:{display:false}}}}});
 
-  // Tabla RF
-  document.getElementById('tRFBody').innerHTML=rf.map(r=>
-    `<tr><td class="mono">${r.isin||'—'}</td>
-    <td class="main" title="${r.esp}">${r.esp.length>24?r.esp.slice(0,24)+'…':r.esp}</td>
-    <td>${r.port||'—'}</td><td>${bdg(r.tipo)}</td>
-    <td class="r">${fC(r.nominal)}</td>
-    <td class="r">${r.precio!=null?r.precio.toFixed(3):'—'}</td>
-    <td class="r" style="color:var(--b);font-weight:700">${r.tir&&r.tir>0.0001?fP(r.tir*100):'—'}</td>
-    <td style="font-size:10px;color:var(--tx2)">${r.facial||'—'}</td>
-    <td style="font-size:11px">${r.mod||'—'}</td>
-    <td style="font-size:11px">${r.vcto||'—'}</td>
-    <td class="r">${r.dias_vcto!=null?Math.round(r.dias_vcto):'—'}</td>
-    <td class="r">${fC(r.valor)}</td>
-    <td class="${clr(r.pl)}">${r.pl!=null?sgn(r.pl)+fC(r.pl):'—'}</td>
-    <td class="${clr(r.caus_mer)}">${fC(r.caus_mer)}</td>
-    <td class="${clr(r.caus_tir)}">${fC(r.caus_tir)}</td>
-    <td class="r">${fC(r.adeudados)}</td></tr>`
-  ).join('');
+  // Tabla RF — ordenable
+  _renderRFTable(rf);
 }
 
 // Alias para compatibilidad
@@ -1082,30 +1386,31 @@ function renderDetalle(){
 }
 
 function detRow(r){
-  return`<tr>
-  <td class="main" title="${r.esp}">${r.esp.length>26?r.esp.slice(0,26)+'…':r.esp}</td>
-  <td>${r.port||'—'}</td><td>${bdg(r.tipo)}</td>
-  <td class="mono">${r.isin||'—'}</td>
-  <td class="r">${fC(r.valor)}</td>
-  <td class="${clr(r.pl)}">${r.pl!=null?sgn(r.pl)+fC(r.pl):'—'}</td>
-  <td class="${clr(r.rend)}">${r.rend!=null?sgn(r.rend)+fP(r.rend):'—'}</td>
-  <td class="${clr(r.caus_mer)}">${fC(r.caus_mer)}</td>
-  <td class="${clr(r.caus_tir)}">${fC(r.caus_tir)}</td>
-  <td class="${clr(r.caus_mon)}">${fC(r.caus_mon)}</td>
-  <td class="${clr(r.caus_tasa)}">${fC(r.caus_tasa)}</td>
-  <td class="r">${fC(r.adeudados)}</td>
-  <td class="r" style="color:var(--b)">${r.tir&&r.tir>0.0001?fP(r.tir*100):'—'}</td>
-  <td class="r">${r.precio!=null?f3(r.precio):'—'}</td>
-  <td class="r">${fC(r.nominal)}</td>
-  <td style="font-size:11px">${r.vcto||'—'}</td>
-  <td class="r">${r.dias_vcto!=null?Math.round(r.dias_vcto):'—'}</td>
-  <td style="font-size:10px;color:var(--tx2)">${r.facial||'—'}</td>
-  <td style="font-size:11px">${r.mod||'—'}</td>
-  <td>${estC(r.est)}</td>
-  <td style="font-size:11px">${r.moneda||'—'}</td>
-  <td class="${clr(r.dif_fx)}">${r.dif_fx&&r.dif_fx!==0?f3(r.dif_fx):'—'}</td>
-  <td class="r">${r.dias!=null?Math.round(r.dias):'—'}</td>
-  </tr>`;
+  var h='<tr>';
+  h+='<td class="main" title="'+escAttr(r.esp)+'">'+(r.esp.length>26?r.esp.slice(0,26)+'…':escHtml(r.esp))+'</td>';
+  h+='<td>'+escHtml(r.port||'—')+'</td><td>'+bdg(r.tipo)+'</td>';
+  h+='<td class="mono">'+(r.isin||'—')+'</td>';
+  h+='<td class="r">'+fC(r.valor)+'</td>';
+  h+='<td class="'+clr(r.pl)+'">'+(r.pl!=null?sgn(r.pl)+fC(r.pl):'—')+'</td>';
+  h+='<td class="'+clr(r.rend)+'">'+(r.rend!=null?sgn(r.rend)+fP(r.rend):'—')+'</td>';
+  h+='<td class="'+clr(r.caus_mer)+'">'+fC(r.caus_mer)+'</td>';
+  h+='<td class="'+clr(r.caus_tir)+'">'+fC(r.caus_tir)+'</td>';
+  h+='<td class="'+clr(r.caus_mon)+'">'+fC(r.caus_mon)+'</td>';
+  h+='<td class="'+clr(r.caus_tasa)+'">'+fC(r.caus_tasa)+'</td>';
+  h+='<td class="r">'+fC(r.adeudados)+'</td>';
+  h+='<td class="r" style="color:var(--b)">'+(r.tir&&r.tir>0.0001?fP(r.tir*100):'—')+'</td>';
+  h+='<td class="r">'+(r.precio!=null?f3(r.precio):'—')+'</td>';
+  h+='<td class="r">'+fC(r.nominal)+'</td>';
+  h+='<td style="font-size:11px">'+(r.vcto||'—')+'</td>';
+  h+='<td class="r">'+(r.dias_vcto!=null?Math.round(r.dias_vcto):'—')+'</td>';
+  h+='<td style="font-size:10px;color:var(--tx2)">'+(r.facial||'—')+'</td>';
+  h+='<td style="font-size:11px">'+(r.mod||'—')+'</td>';
+  h+='<td>'+estC(r.est)+'</td>';
+  h+='<td style="font-size:11px">'+(r.moneda||'—')+'</td>';
+  h+='<td class="'+clr(r.dif_fx)+'">'+(r.dif_fx&&r.dif_fx!==0?f3(r.dif_fx):'—')+'</td>';
+  h+='<td class="r">'+(r.dias!=null?Math.round(r.dias):'—')+'</td>';
+  h+='</tr>';
+  return h;
 }
 
 
@@ -1326,51 +1631,166 @@ function exportCfgPython(){
 }
 
 // renderCfgRows y addCfgRow (usados desde el nuevo modal)
-function renderCfgRows(){
-  const tipos=['TES','Fondos','Liquidez','Derivados','AOR','TIDIS','CDT','Acciones','Titularizaciones','Otro'];
-  const container=document.getElementById('cfgRows');
-  const currentMap=loadCfg();
-  const others=D.tabla.filter(r=>r.tipo==='Otro'||currentMap[r.esp]).map(r=>r.esp);
-  const allEsp=[...new Set([...Object.keys(currentMap),...others])];
-  container.innerHTML=allEsp.map(esp=>{
-    const currTipo=currentMap[esp]||D.tabla.find(r=>r.esp===esp)?.tipo||'Otro';
-    const id='cfgr-'+btoa(esp).replace(/[^a-zA-Z0-9]/g,'');
-    return`<div class="cfg-row" id="${id}">
-      <div class="cfg-label" title="${esp}" style="overflow:hidden;text-overflow:ellipsis">${esp.length>36?esp.slice(0,36)+'…':esp}</div>
-      <div style="display:flex;gap:6px;align-items:center">
-        <select class="cfg-select" data-esp="${esp.replace(/"/g,'&quot;')}">
-          ${tipos.map(t=>`<option value="${t}"${t===currTipo?' selected':''}>${t}</option>`).join('')}
-        </select>
-        <button onclick="removeCfgRow('${id.replace('cfgr-','')}')" style="color:var(--r);font-size:16px;padding:2px 6px;flex-shrink:0">×</button>
-      </div></div>`;
-  }).join('');
-  if(allEsp.length===0){
-    container.innerHTML=`<div style="font-size:12px;color:var(--tx2);padding:8px 0">
-      Sin reglas. ${D.tabla.filter(r=>r.tipo==='Otro').length} instrumentos clasificados como "Otro".<br>
-      Usa "+ Agregar regla" para corregirlos.</div>`;
-  }
-}
-function removeCfgRow(id){ document.getElementById('cfgr-'+id)?.remove(); }
-function addCfgRow(){
-  const especies=[...new Set(D.tabla.map(r=>r.esp))].sort();
-  const tipos=['TES','Fondos','Liquidez','Derivados','AOR','TIDIS','CDT','Acciones','Titularizaciones','Otro'];
-  const id='new_'+Date.now();
-  const el=document.createElement('div');
-  el.className='cfg-row'; el.id='cfgr-'+id;
-  el.innerHTML=`
-    <select class="cfg-select" data-esp="" style="font-size:11px">
-      <option value="">— Seleccionar especie —</option>
-      ${especies.map(e=>`<option value="${e.replace(/"/g,'&quot;')}">${e.length>44?e.slice(0,44)+'…':e}</option>`).join('')}
-    </select>
-    <div style="display:flex;gap:6px;align-items:center">
-      <select class="cfg-select" data-tipo="1">
-        ${tipos.map(t=>`<option value="${t}">${t}</option>`).join('')}
-      </select>
-      <button onclick="removeCfgRow('${id}')" style="color:var(--r);font-size:16px;padding:2px 6px;flex-shrink:0">×</button>
-    </div>`;
-  document.getElementById('cfgRows').appendChild(el);
+// Los tipos disponibles para clasificación
+const TIPOS_DISPONIBLES=['TES','Fondos','Liquidez','Derivados','AOR','TIDIS','CDT','Acciones','Titularizaciones','Otro'];
+
+function _tipoSelect(selectedVal, dataAttr){
+  var s='<select class="cfg-select" '+dataAttr+'>';
+  TIPOS_DISPONIBLES.forEach(function(t){
+    s+='<option value="'+t+'"'+(t===selectedVal?' selected':'')+'>'+t+'</option>';
+  });
+  s+='</select>';
+  return s;
 }
 
+function renderCfgRows(){
+  const container=document.getElementById('cfgRows');
+  const currentMap=loadCfg();
+  // Mostrar: reglas manuales + especies clasificadas como Otro
+  const others=D.tabla.filter(function(r){return r.tipo==='Otro'||currentMap[r.esp];}).map(function(r){return r.esp;});
+  const allEsp=[...new Set([...Object.keys(currentMap),...others])];
+
+  const cnt=document.getElementById('cfgRowsCount');
+  if(cnt) cnt.textContent=allEsp.length+' reglas';
+
+  if(allEsp.length===0){
+    const otroCount=D.tabla.filter(function(r){return r.tipo==='Otro';}).length;
+    container.innerHTML='<div style="font-size:12px;color:var(--tx2);padding:10px 0;line-height:1.8">'
+      +(otroCount>0?'Hay <b style="color:var(--y)">'+otroCount+'</b> instrumentos sin clasificar.<br>Usa "Solo Otro" para verlos.':'Sin reglas configuradas.')+'</div>';
+  } else {
+    var html='';
+    allEsp.forEach(function(esp){
+      const currTipo=currentMap[esp]||D.tabla.find(function(r){return r.esp===esp;})?.tipo||'Otro';
+      const safeId='cfgr-'+esp.replace(/[^a-zA-Z0-9]/g,'_').slice(0,30)+'_'+Math.abs(esp.split('').reduce(function(a,c){return a+c.charCodeAt(0);},0));
+      const badge='<span class="bdg '+(BCL[currTipo]||'b-oth')+'">'+currTipo+'</span>';
+      html+='<div class="cfg-row" id="'+safeId+'" style="align-items:center;border:1px solid var(--bd);border-radius:7px;padding:6px 8px;margin-bottom:4px;background:var(--s2)">';
+      html+='<div style="min-width:0;flex:1"><div class="cfg-label" title="'+escAttr(esp)+'" style="font-size:11.5px;overflow:hidden;text-overflow:ellipsis">'+escHtml(esp.length>40?esp.slice(0,40)+'…':esp)+'</div>';
+      html+='<div style="margin-top:2px">'+badge+'</div></div>';
+      html+='<div style="display:flex;gap:6px;align-items:center;flex-shrink:0">';
+      html+=_tipoSelect(currTipo,'data-esp="'+escAttr(esp)+'"');
+      html+='<button onclick="removeCfgRow(\''+safeId+'\')" style="color:var(--r);font-size:16px;padding:2px 8px;flex-shrink:0;border:1px solid var(--bd);border-radius:5px" title="Eliminar regla">×</button>';
+      html+='</div></div>';
+    });
+    container.innerHTML=html;
+  }
+}
+
+function removeCfgRow(id){
+  const el=document.getElementById(id);
+  if(el){el.style.opacity='0';el.style.transition='opacity .2s';setTimeout(function(){el.remove();},200);}
+}
+
+// Búsqueda rápida de especie para agregar regla
+function addCfgRow(){
+  const container=document.getElementById('cfgRows');
+  const id='cfgr_new_'+Date.now();
+
+  // Crear fila con input de búsqueda + datalist
+  const especies=[...new Set(D.tabla.map(function(r){return r.esp;}))].sort();
+  const datalistId='dl_esp_'+Date.now();
+
+  const el=document.createElement('div');
+  el.className='cfg-row';
+  el.id=id;
+  el.style.cssText='align-items:center;border:2px dashed var(--g);border-radius:7px;padding:8px;margin-bottom:4px;background:var(--g4);animation:slideDown .2s ease';
+
+  let optHtml='';
+  especies.forEach(function(e){ optHtml+='<option value="'+escAttr(e)+'">'; });
+
+  el.innerHTML='<input list="'+datalistId+'" class="cfg-input" placeholder="Buscar especie..." style="flex:1;font-size:12px" oninput="_cfgPreview(this)" autocomplete="off">'
+    +'<datalist id="'+datalistId+'">'+optHtml+'</datalist>'
+    +'<div style="display:flex;gap:6px;align-items:center;flex-shrink:0">'
+    +_tipoSelect('CDT','data-tipo="1"')
+    +'<button onclick="removeCfgRow(\''+id+'\')" style="color:var(--r);font-size:16px;padding:2px 8px;border:1px solid var(--bd);border-radius:5px">×</button>'
+    +'</div>';
+
+  container.appendChild(el);
+  el.querySelector('input').focus();
+
+  // Añadir datalist al documento
+  const dl=document.createElement('datalist');
+  dl.id=datalistId;
+  especies.forEach(function(e){const o=document.createElement('option');o.value=e;dl.appendChild(o);});
+  document.body.appendChild(dl);
+}
+
+function _cfgPreview(input){
+  // Mostrar preview del tipo actual cuando se selecciona una especie conocida
+  const esp=input.value.trim();
+  const row=D.tabla.find(function(r){return r.esp===esp;});
+  if(row){
+    const hint=input.parentElement.querySelector('.cfg-hint-live');
+    if(!hint){
+      const h=document.createElement('div');
+      h.className='cfg-hint-live';
+      h.style.cssText='font-size:10px;color:var(--tx2);margin-top:2px';
+      input.insertAdjacentElement('afterend',h);
+    }
+    const h2=input.parentElement.querySelector('.cfg-hint-live');
+    if(h2) h2.textContent='Tipo actual: '+row.tipo+' — reasignar a:';
+  }
+}
+
+
+// ─── FILTROS DEL PANEL DE CLASIFICACIÓN ───────────────────────
+function _filterCfgRows(q){
+  const input=document.getElementById('cfgEspSearch');
+  if(input && q!==undefined) input.value=q;
+  const term=(q||'').toLowerCase();
+  const rows=document.querySelectorAll('#cfgRows [id^="cfgr"]');
+  let visible=0;
+  rows.forEach(function(row){
+    const label=row.querySelector('.cfg-label');
+    const txt=(label?label.title||label.textContent:'').toLowerCase();
+    const show=!term||txt.includes(term);
+    row.style.display=show?'':'none';
+    if(show)visible++;
+  });
+  const cnt=document.getElementById('cfgRowsCount');
+  if(cnt) cnt.textContent=visible+' '+( term?'encontrados':'reglas');
+}
+
+function _filterCfgByTipo(tipo){
+  document.getElementById('cfgEspSearch').value='';
+  const rows=document.querySelectorAll('#cfgRows [id^="cfgr"]');
+  let visible=0;
+  rows.forEach(function(row){
+    const sel=row.querySelector('select[data-esp]');
+    const currTipo=sel?sel.value:'';
+    const show=currTipo===tipo;
+    row.style.display=show?'':'none';
+    if(show)visible++;
+  });
+  const cnt=document.getElementById('cfgRowsCount');
+  if(cnt) cnt.textContent=visible+' de tipo '+tipo;
+}
+
+function _showOnlyOtros(){
+  // Mostrar todos los "Otro" del portafolio para reclasificar
+  const currentMap=loadCfg();
+  const otroEsps=[...new Set(D.tabla.filter(function(r){return r.tipo==='Otro';}).map(function(r){return r.esp;}))];
+  const container=document.getElementById('cfgRows');
+  // Añadir los que no están ya
+  otroEsps.forEach(function(esp){
+    const exists=[...container.querySelectorAll('[data-esp]')].some(function(s){return s.dataset.esp===esp;});
+    if(!exists){
+      const safeId='cfgr_o_'+esp.replace(/[^a-zA-Z0-9]/g,'_').slice(0,30)+'_'+Math.abs(esp.split('').reduce(function(a,c){return a+c.charCodeAt(0);},0));
+      const el=document.createElement('div');
+      el.id=safeId;
+      el.style.cssText='display:flex;align-items:center;gap:8px;border:1px solid var(--bd);border-radius:7px;padding:6px 8px;margin-bottom:4px;background:var(--s2)';
+      el.innerHTML='<div style="flex:1;font-size:11.5px;overflow:hidden;text-overflow:ellipsis" title="'+escAttr(esp)+'">'+escHtml(esp.length>40?esp.slice(0,40)+'…':esp)+'</div>'
+        +'<div style="display:flex;gap:6px;align-items:center;flex-shrink:0">'
+        +_tipoSelect('CDT','data-esp="'+escAttr(esp)+'"')
+        +'<button onclick="removeCfgRow(\''+safeId+'\')" style="color:var(--r);font-size:16px;padding:2px 8px;border:1px solid var(--bd);border-radius:5px">×</button>'
+        +'</div>';
+      container.appendChild(el);
+    }
+  });
+  // Filtrar para mostrar solo los "Otro"
+  _filterCfgByTipo('Otro');
+  const cnt=document.getElementById('cfgRowsCount');
+  if(cnt) cnt.textContent=otroEsps.length+' sin clasificar';
+}
 
 // initAnalisis: eliminado — ver initRendimiento e initInstrumentos
 

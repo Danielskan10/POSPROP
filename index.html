@@ -414,6 +414,32 @@ tfoot td{font-weight:700;border-top:2px solid var(--bd2);background:var(--s2)}
   background:var(--s2);color:var(--tx);border:1px solid var(--bd)}
 .regla-row input:focus{border-color:var(--g);outline:none}
 
+/* ═══ DRILL-DOWN PANEL ═══════════════════════════════════════ */
+.drill-panel{
+  background:var(--s2);border:1px solid var(--g);border-radius:var(--rad);
+  margin-top:8px;overflow:hidden;
+  animation:slideDown .2s ease-out;
+}
+@keyframes slideDown{from{opacity:0;transform:translateY(-8px)}to{opacity:1;transform:none}}
+.drill-header{
+  display:flex;align-items:center;gap:12px;padding:10px 16px;
+  background:linear-gradient(90deg,var(--g4),transparent);
+  border-bottom:1px solid var(--bd)
+}
+.drill-title{font-weight:700;font-size:12px;color:var(--g)}
+.drill-count{font-size:11px;color:var(--tx2);font-family:var(--mono);margin-left:auto}
+.drill-close{padding:3px 8px;border-radius:5px;font-size:13px;color:var(--tx2);
+  border:1px solid var(--bd);transition:all var(--trans);margin-left:8px}
+.drill-close:hover{color:var(--r);border-color:var(--r)}
+
+/* ═══ TABLA ORDENABLE ════════════════════════════════════════ */
+th.col-sorted{color:var(--g)!important}
+th{cursor:pointer;user-select:none;transition:color var(--trans)}
+th:hover{color:var(--tx)!important}
+/* fila de tabla clickeable para drill-down */
+tr.drill-row{cursor:pointer}
+tr.drill-row:hover td{background:rgba(0,133,74,.06)!important}
+
 /* ═══ LOADING SKELETON ════════════════════════════════════════ */
 @keyframes shimmer{0%{background-position:-400px 0}100%{background-position:400px 0}}
 .skel{background:linear-gradient(90deg,var(--s2) 25%,var(--s3) 50%,var(--s2) 75%);
@@ -914,25 +940,47 @@ tfoot td{font-weight:700;border-top:2px solid var(--bd2);background:var(--s2)}
         <div class="cfg-section">
           <div class="cfg-title">
             <svg viewBox="0 0 24 24"><path d="M12 2L2 7l10 5 10-5-10-5zM2 17l10 5 10-5"/></svg>
-            Mapa de clasificación de instrumentos
+            Clasificación de instrumentos
           </div>
           <div class="cfg-info">
-            Corrige la clasificación automática de instrumentos.<br>
-            <b>Ejemplo</b>: "Credito Bancolombia 365 $" → CDT
+            Asigna el tipo correcto a cada instrumento. El cambio aplica inmediatamente a todas las gráficas.
+            Los instrumentos sin clasificar aparecen como <b>Otro</b>.
           </div>
-          <div id="cfgRows" style="display:flex;flex-direction:column;gap:6px"></div>
-          <button onclick="addCfgRow()" class="btn-sm" style="margin-top:10px;color:var(--g);border-color:var(--g)">
-            + Agregar regla
-          </button>
+
+          <!-- Buscador rápido -->
+          <div style="display:flex;gap:8px;margin-bottom:12px;align-items:center">
+            <input id="cfgEspSearch" type="search" placeholder="Buscar instrumento..."
+              style="flex:1;font-size:12px" oninput="_filterCfgRows(this.value)">
+            <button onclick="_showOnlyOtros()" class="btn-sm" style="white-space:nowrap;font-size:11px;color:var(--y);border-color:var(--y)">
+              Solo "Otro"
+            </button>
+          </div>
+
+          <!-- Listado de reglas -->
+          <div id="cfgRows" style="display:flex;flex-direction:column;gap:0;max-height:320px;overflow-y:auto;padding-right:4px"></div>
+
+          <div style="display:flex;gap:8px;margin-top:10px;flex-wrap:wrap;align-items:center">
+            <button onclick="addCfgRow()" class="btn-sm" style="color:var(--g);border-color:var(--g)">
+              + Agregar instrumento
+            </button>
+            <span id="cfgRowsCount" style="font-size:11px;color:var(--tx2)"></span>
+          </div>
         </div>
+
         <div class="cfg-section">
-          <div class="cfg-title">Tipos disponibles</div>
-          <div class="cfg-badge-row">
-            <span class="bdg b-tes">TES</span><span class="bdg b-fnd">Fondos</span>
-            <span class="bdg b-liq">Liquidez</span><span class="bdg b-der">Derivados</span>
-            <span class="bdg b-aor">AOR</span><span class="bdg b-tid">TIDIS</span>
-            <span class="bdg b-cdt">CDT</span><span class="bdg b-acc">Acciones</span>
-            <span class="bdg b-oth">Titularizaciones</span><span class="bdg b-oth">Otro</span>
+          <div class="cfg-title">Tipos disponibles — click para filtrar</div>
+          <div class="cfg-badge-row" id="tipoBadgeFilter" style="cursor:pointer">
+            <span class="bdg b-tes" onclick="_filterCfgByTipo('TES')" title="Mostrar solo TES">TES</span>
+            <span class="bdg b-fnd" onclick="_filterCfgByTipo('Fondos')" title="Mostrar solo Fondos">Fondos</span>
+            <span class="bdg b-liq" onclick="_filterCfgByTipo('Liquidez')">Liquidez</span>
+            <span class="bdg b-der" onclick="_filterCfgByTipo('Derivados')">Derivados</span>
+            <span class="bdg b-aor" onclick="_filterCfgByTipo('AOR')">AOR</span>
+            <span class="bdg b-tid" onclick="_filterCfgByTipo('TIDIS')">TIDIS</span>
+            <span class="bdg b-cdt" onclick="_filterCfgByTipo('CDT')">CDT</span>
+            <span class="bdg b-acc" onclick="_filterCfgByTipo('Acciones')">Acciones</span>
+            <span class="bdg b-oth" onclick="_filterCfgByTipo('Titularizaciones')">Titularizaciones</span>
+            <span class="bdg b-oth" onclick="_filterCfgByTipo('Otro')">Otro</span>
+            <span class="bdg" style="background:var(--s3);color:var(--tx2)" onclick="_filterCfgRows('')">✕ Todos</span>
           </div>
         </div>
       </div>
