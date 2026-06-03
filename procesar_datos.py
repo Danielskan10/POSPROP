@@ -1,11 +1,10 @@
 # ╔══════════════════════════════════════════════════════════════════╗
-# ║  SAPIENZA · Procesador de Posiciones de Portafolio  v3          ║
+# ║  SAPIENZA · Procesador de Posiciones de Portafolio              ║
 # ║  Flujo:                                                         ║
 # ║    1. Lee CSV/XLSX nuevos (caché incremental — no reprocesa)    ║
-# ║    2. Genera data.json  +  index.html (carga data.json remoto)  ║
-# ║    3. git add + commit + push  →  GitHub Pages publica todo     ║
-# ║  Resultado: https://<user>.github.io/<repo>/                    ║
-# ║             data.json se sirve desde el mismo dominio (sin CORS)║
+# ║    2. Genera data.json y lo sube a GitHub                       ║
+# ║    3. GitHub Pages sirve el dashboard actualizado               ║
+# ║  Universal: funciona en cualquier PC sin cambiar rutas          ║
 # ╚══════════════════════════════════════════════════════════════════╝
 
 import os, re, glob, json, subprocess, warnings, hashlib
@@ -17,15 +16,18 @@ import numpy as np
 
 warnings.filterwarnings("ignore")
 
+# ── Ruta raíz: siempre la carpeta donde está este script ──────────
+# Funciona en cualquier PC sin importar dónde esté instalado.
+ROOT = os.path.dirname(os.path.abspath(__file__))
+
 # ┌─────────────────────────────────────────────────────────────────┐
 # │  ★  CONFIGURACIÓN — solo editar aquí                            │
 # └─────────────────────────────────────────────────────────────────┘
 CFG = {
-    # ── Rutas ────────────────────────────────────────────────────
-    "carpeta_datos": r"C:\Users\danie\Sapienza\POSPRO",
-    "output_html":   r"C:\Users\danie\Sapienza\POSPRO\index.html",
-    "output_json":   r"C:\Users\danie\Sapienza\POSPRO\data.json",
-    "cache_file":    r"C:\Users\danie\Sapienza\POSPRO\.cache_procesado.json",
+    # ── Rutas (relativas al script — no cambiar) ──────────────────
+    # ROOT se calcula automáticamente arriba
+    "output_json":   os.path.join(ROOT, "data.json"),
+    "cache_file":    os.path.join(ROOT, ".cache_procesado.json"),
 
     # ── Git ──────────────────────────────────────────────────────
     "git_push":   True,
@@ -163,8 +165,6 @@ CFG = {
     },
 }
 # ──────────────────────────────────────────────────────────────────
-
-ROOT = CFG["carpeta_datos"]
 
 COLS_RAW = [
     "Especie","Titulo","Inver","F_Vcto","Vlr_Nominal","Facial","Mod",
@@ -998,125 +998,150 @@ def git_push_files(files, msg):
 #  MAIN
 # ══════════════════════════════════════════════════════════════════
 
+def verificar_git_credenciales():
+    """
+    Verifica que git tenga credenciales configuradas para hacer push.
+    Si no las tiene, guía al usuario paso a paso.
+    Devuelve True si todo está OK.
+    """
+    # Verificar que git esté instalado
+    r = subprocess.run(["git", "--version"], capture_output=True, text=True)
+    if r.returncode != 0:
+        print("\n  [ERROR] Git no está instalado.")
+        print("  Descárgalo en: https://git-scm.com/downloads")
+        return False
+
+    # Verificar que hay un repo git en ROOT
+    r = _git(["rev-parse", "--git-dir"])
+    if r.returncode != 0:
+        print(f"\n  [ERROR] La carpeta '{ROOT}' no es un repositorio git.")
+        print("  Solución: clona el repositorio con:")
+        print(f"    git clone https://github.com/Danielskan10/POSPROP \"{ROOT}\"")
+        return False
+
+    # Verificar que hay remote origin
+    r = _git(["remote", "get-url", "origin"])
+    if r.returncode != 0:
+        print("\n  [ERROR] No hay remote 'origin' configurado.")
+        print("  Solución:")
+        print(f"    git -C \"{ROOT}\" remote add origin https://github.com/Danielskan10/POSPROP")
+        return False
+
+    # Test de autenticación: hacer un fetch dry-run
+    r = _git(["ls-remote", "--heads", "origin"])
+    if r.returncode != 0:
+        err = r.stderr.strip()
+        print(f"\n  [ERROR] No se puede conectar a GitHub: {err}")
+        print("\n  ── Cómo configurar credenciales ──────────────────────")
+        print("  1. Ve a https://github.com/settings/tokens")
+        print("  2. Generate new token (classic) → marca 'repo' → copia el token")
+        print("  3. Ejecuta en la terminal:")
+        remote_url = _git(["remote", "get-url", "origin"]).stdout.strip()
+        m = re.search(r"github\.com[:/](.+?)(?:\.git)?$", remote_url)
+        repo_path  = m.group(1) if m else "Danielskan10/POSPROP"
+        print(f"     git -C \"{ROOT}\" remote set-url origin https://TU_USUARIO:TU_TOKEN@github.com/{repo_path}")
+        print("  4. Vuelve a correr el script.")
+        print("  ─────────────────────────────────────────────────────")
+        return False
+
+    return True
+
+
 def main():
-    print("=" * 64)
-    print(" SAPIENZA — Procesador de Posiciones")
-    print(f" Carpeta: {ROOT}")
-    print("=" * 64 + "\n")
+    LINE = "═" * 64
+    print(f"\n  {LINE}")
+    print(f"  ║  SAPIENZA · Procesador de Posiciones de Portafolio   ║")
+    print(f"  {LINE}")
 
-    # ── 0. Setup inicial ─────────────────────────────────────────
+    # ── 0. Setup ─────────────────────────────────────────────────
     cache = cargar_cache()
-    print(f"[0/5] Caché: {len(cache)} archivos registrados")
-
     gi_path = ensure_gitignore()
 
-    # Detectar GitHub remote automáticamente
-    gh_user, gh_repo, gh_branch = get_github_info()
+    # Detectar repositorio y URL del dashboard
+    gh_user, gh_repo, _ = get_github_info()
+    remote_url = _git(["remote", "get-url", "origin"]).stdout.strip()
+
+    print(f"\n  Repositorio : {remote_url or '[no configurado]'}")
     if gh_user:
-        # El index.html y data.json están en el mismo dominio de GitHub Pages,
-        # así que fetch("./data.json") funciona sin CORS.
-        pages_url   = f"https://{gh_user}.github.io/{gh_repo}/"
-        data_json_url = f"https://{gh_user}.github.io/{gh_repo}/data.json"
-        print(f"  GitHub Pages → {pages_url}")
+        pages_url = f"https://{gh_user}.github.io/{gh_repo}/"
+        print(f"  Dashboard   : {pages_url}")
     else:
-        pages_url     = ""
-        data_json_url = ""
-        print("  [WARN] No se detectó remote GitHub. Modo offline.")
+        pages_url = ""
+        print(f"  Dashboard   : [GitHub Pages no detectado]")
+    print(f"  Caché       : {len(cache)} archivos registrados")
+    print(f"  Carpeta     : {ROOT}\n")
+
+    # Verificar credenciales antes de procesar
+    if CFG["git_push"]:
+        if not verificar_git_credenciales():
+            raise SystemExit(1)
 
     # ── 1. CSV → XLSX ────────────────────────────────────────────
-    print("\n[1/5] Convirtiendo CSV a XLSX...")
+    print("[1/4] Convirtiendo CSV a XLSX...")
     convertir_csvs(cache)
 
-    # ── 2. Cargar datos (caché incremental) ──────────────────────
-    print("\n[2/5] Cargando datos...")
+    # ── 2. Cargar datos ──────────────────────────────────────────
+    print("\n[2/4] Cargando datos (caché incremental)...")
     master, hay_nuevos = cargar(cache)
 
     if not hay_nuevos:
         print("\n  ✓ Sin archivos nuevos — data.json ya está actualizado.")
-        if CFG["git_push"] and gh_user:
-            # Aún así regeneramos el HTML por si el template cambió
-            print("  Regenerando index.html por si el template cambió...")
-        else:
-            import webbrowser; webbrowser.open(CFG["output_html"]); return
+        if pages_url:
+            print(f"\n  Dashboard: {pages_url}")
+        return
 
-    # ── 3. Guardar caché ─────────────────────────────────────────
+    # ── 3. Construir y guardar data.json ─────────────────────────
     guardar_cache(cache)
-    print(f"\n  Caché guardado ({len(cache)} entradas)")
-
-    # ── 4. Construir data.json ───────────────────────────────────
-    print("\n[3/5] Construyendo data.json...")
+    print(f"\n[3/4] Construyendo data.json...")
     data = build_json(master)
 
-    # Inyectar la URL del dashboard en los metadatos del JSON
     if gh_user:
         data["meta"]["data_url"] = f"https://{gh_user}.github.io/{gh_repo}/data.json"
 
     json_out = CFG["output_json"]
     with open(json_out, "w", encoding="utf-8") as f:
-        data_pub = {k:v for k,v in data.items() if k != "_raw_tabla"}
-        json.dump(data_pub, f, ensure_ascii=False, separators=(",",":"), default=str)
-    kb_json = os.path.getsize(json_out) // 1024
-    print(f"  data.json  : {kb_json} KB  ({data['meta']['n_fechas']} fechas)")
+        data_pub = {k: v for k, v in data.items() if k != "_raw_tabla"}
+        json.dump(data_pub, f, ensure_ascii=False, separators=(",", ":"), default=str)
+    kb = os.path.getsize(json_out) // 1024
+    print(f"  data.json  : {kb} KB  ({data['meta']['n_fechas']} fechas)")
 
-    # ── 5. Generar index.html ────────────────────────────────────
-    # El HTML publicado siempre es LIGERO: hace fetch("./data.json")
-    # que en GitHub Pages carga del mismo dominio sin CORS.
-    # Solo se incluye el JSON inline si NO hay GitHub configurado.
-    print("\n[4/5] Generando index.html...")
-    # ── Generar index.html + app.js ─────────────────────────────────
-    # _build.py separa el JS a app.js externo para evitar que el parser
-    # HTML malinterprete template literals JS como etiquetas HTML.
-    build_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), "_build.py")
-    if not os.path.exists(build_path):
-        raise SystemExit(f"[ERROR] No se encuentra _build.py: {build_path}")
-    r = subprocess.run(
-        ["python", build_path],
-        capture_output=True, text=True, cwd=ROOT
-    )
-    if r.returncode != 0:
-        print(f"  [ERROR] _build.py: {r.stderr.strip()}")
-        raise SystemExit(1)
-    for line in r.stdout.strip().splitlines():
-        print(f"  {line}")
-
-    html_out = CFG["output_html"]
-
-    # ── Resumen ──────────────────────────────────────────────────
+    # ── Resumen de datos ─────────────────────────────────────────
     k = data["kpis"]; s = data["stats"]
-    print(f"\n{'─'*64}")
-    print(f"  Fecha posicion   : {data['meta']['ultimo_dia']}")
+    print(f"\n  {'─'*50}")
+    print(f"  Fecha posición   : {data['meta']['ultimo_dia']}")
     print(f"  Total portafolio : ${k['total']:>22,.0f}")
-    print(f"  P&L del dia      : ${k['pl']:>+22,.0f}  ({k['var_pct']:+.3f}%)")
+    print(f"  P&L del día      : ${k['pl']:>+22,.0f}  ({k['var_pct']:+.3f}%)")
     print(f"  P&L acumulado    : ${s['pl_acum']:>+22,.0f}")
-    print(f"  Hit rate         : {s.get('hit_rate',0):.1f}%   Sharpe: {s['sharpe']}")
+    print(f"  Hit rate         : {s.get('hit_rate', 0):.1f}%   Sharpe: {s['sharpe']}")
     print(f"  TIR ponderada    : {str(k['tir_pond'])+'%':>24}")
-    print(f"  Drawdown max     : {str(s['drawdown'])+'%':>24}")
     print(f"  Exp. FX          : ${k['fx_total']:>22,.0f}  ({k['fx_pct']:.1f}%)")
-    print(f"{'─'*64}")
+    print(f"  {'─'*50}")
 
-    # ── 5. Git push ───────────────────────────────────────────────
+    # ── 4. Git push — solo data.json ─────────────────────────────
+    # El index.html y app.js ya están publicados en GitHub Pages
+    # y no cambian con los datos. Solo se sube data.json.
     if CFG["git_push"]:
-        print("\n[5/5] Subiendo a GitHub...")
-        fecha  = datetime.now().strftime("%Y-%m-%d %H:%M")
-        msg    = CFG["git_msg"].format(fecha=fecha)
-        # Subimos: index.html + data.json + .gitignore
-        # NO subimos: .cache_procesado.json (está en .gitignore)
-        files  = [html_out, json_out, gi_path]
-        ok     = git_push_files(files, msg)
+        print(f"\n[4/4] Subiendo data.json a GitHub...")
+        fecha = datetime.now().strftime("%Y-%m-%d %H:%M")
+        msg   = CFG["git_msg"].format(fecha=fecha)
+        ok    = git_push_files([json_out, gi_path], msg)
 
-        if ok and gh_user:
-            print(f"\n  ╔═══════════════════════════════════════════════════╗")
-            print(f"  ║  Dashboard publicado en GitHub Pages              ║")
-            print(f"  ╠═══════════════════════════════════════════════════╣")
-            print(f"  ║  {pages_url:<49} ║")
-            print(f"  ╚═══════════════════════════════════════════════════╝")
-            print(f"\n  Comparte esa URL — se actualiza sola cada vez que")
-            print(f"  corras este script y hagas push.")
+        print()
+        if ok:
+            print(f"  ╔{'═'*55}╗")
+            print(f"  ║  ✓ Datos publicados correctamente                      ║")
+            print(f"  ╠{'═'*55}╣")
+            print(f"  ║  Dashboard → {pages_url:<40} ║")
+            print(f"  ║  Repo      → {remote_url:<40} ║")
+            print(f"  ╚{'═'*55}╝")
+            print(f"\n  El dashboard mostrará los datos nuevos en ~1 minuto.")
+        else:
+            print(f"  [ERROR] El push falló. Verifica las credenciales de git.")
+            print(f"  Los datos se guardaron localmente en: {json_out}")
     else:
-        print("\n[5/5] Git push desactivado (CFG['git_push'] = False).")
-
-    import webbrowser
-    webbrowser.open(html_out)
+        print(f"\n[4/4] Git push desactivado.")
+        if pages_url:
+            print(f"  Dashboard: {pages_url}")
     print("\n  Abriendo dashboard local…")
 
 
