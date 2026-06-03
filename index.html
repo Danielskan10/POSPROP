@@ -1551,7 +1551,7 @@ function buildPortCards(rows,ttl){
   });
   const portArr=Object.entries(byP).sort((a,b)=>b[1].total-a[1].total);
   const maxPct=portArr[0]&&ttl?portArr[0][1].total/ttl*100:100;
-  return portArr.map(([p,b],i)=>{
+  return portArr.map(function([p,b],i){
     const col=PC[i%PC.length];
     const pct=ttl?b.total/ttl*100:0;
     const ep=D.evol_port[p];
@@ -1559,22 +1559,26 @@ function buildPortCards(rows,ttl){
     const v0=fi>=0&&ep?(ep.total[fi]||0):0;
     const v1=li>=0&&ep?(ep.total[li]||0):0;
     const delta=v0?(v1-v0)/v0*100:0;
-    return`<div class="pcard">
-      <div class="pcard-accent" style="background:linear-gradient(90deg,${col},${col}55)"></div>
-      <div class="pc-name">
-        <span style="display:inline-block;width:8px;height:8px;border-radius:50%;background:${col};flex-shrink:0"></span>${p}
-      </div>
-      <div class="pc-val">${fC(b.total)}</div>
-      <div class="pc-pl ${b.pl>=0?'pos':'neg'}">${sgn(b.pl)}${fC(b.pl)}</div>
-      <div class="pc-prog-wrap">
-        <div class="pc-prog-label"><span>% del total</span><span style="color:${col};font-weight:700">${fP(pct)}</span></div>
-        <div class="pc-prog"><div class="pc-prog-fill" style="width:${pct/maxPct*100}%;background:${col}"></div></div>
-      </div>
-      <div class="pc-sep"></div>
-      <div class="pc-row"><span>Causación mer.</span><span>${fC(b.caus)}</span></div>
-      <div class="pc-row"><span>Posiciones</span><span>${b.n}</span></div>
-      <div class="pc-row"><span>Var. período</span><span style="color:${delta>=0?'var(--g)':'var(--r)'};font-weight:700">${sgn(delta)}${fP(delta)}</span></div>
-    </div>`;
+    // Evitar ternarios con var(--x) dentro de template literals — rompen el parser HTML
+    const plCls = b.pl>=0 ? 'pos' : 'neg';
+    const dltCls = delta>=0 ? 'green' : 'red';
+    const dltStyle = delta>=0 ? 'color:var(--g)' : 'color:var(--r)';
+    const progW = maxPct>0 ? (pct/maxPct*100).toFixed(1) : '0';
+    let html = '<div class="pcard">';
+    html += '<div class="pcard-accent" style="background:linear-gradient(90deg,'+col+','+col+'55)"></div>';
+    html += '<div class="pc-name"><span style="display:inline-block;width:8px;height:8px;border-radius:50%;background:'+col+';flex-shrink:0;margin-right:5px"></span>'+p+'</div>';
+    html += '<div class="pc-val">'+fC(b.total)+'</div>';
+    html += '<div class="pc-pl '+plCls+'">'+sgn(b.pl)+fC(b.pl)+'</div>';
+    html += '<div class="pc-prog-wrap">';
+    html += '<div class="pc-prog-label"><span>% del total</span><span style="color:'+col+';font-weight:700">'+fP(pct)+'</span></div>';
+    html += '<div class="pc-prog"><div class="pc-prog-fill" style="width:'+progW+'%;background:'+col+'"></div></div>';
+    html += '</div>';
+    html += '<div class="pc-sep"></div>';
+    html += '<div class="pc-row"><span>Causación mer.</span><span>'+fC(b.caus)+'</span></div>';
+    html += '<div class="pc-row"><span>Posiciones</span><span>'+b.n+'</span></div>';
+    html += '<div class="pc-row"><span>Var. período</span><span style="'+dltStyle+';font-weight:700">'+sgn(delta)+fP(delta)+'</span></div>';
+    html += '</div>';
+    return html;
   }).join('');
 }
 
@@ -2194,41 +2198,8 @@ function initRentaFija(){ initInstrumentos(); }
       y2:{position:'right',ticks:{color:'rgba(167,139,250,.7)',font:{size:10.5},callback:v=>fmt(v)},grid:{display:false}}
     }}});
 
-  // Portfolio cards
-  const byP={};
-  rows.forEach(r=>{
-    if(!byP[r.port])byP[r.port]={total:0,pl:0,caus:0,n:0};
-    const b=byP[r.port];
-    b.total+=(r.valor||0);b.pl+=(r.pl||0);b.caus+=(r.caus_mer||0);b.n++;
-  });
-  const portArr=Object.entries(byP).sort((a,b)=>b[1].total-a[1].total);
-  document.getElementById('portCards').innerHTML=portArr.map(([p,b],i)=>{
-    const col=PC[i%PC.length];
-    const pct=ttl?b.total/ttl*100:0;
-    const ep=D.evol_port[p];
-    const fi=D.fechas.indexOf(S.f.desde), li=D.fechas.indexOf(S.f.hasta);
-    const v0=fi>=0&&ep?(ep.total[fi]||0):0;
-    const v1=li>=0&&ep?(ep.total[li]||0):0;
-    const delta=v0?(v1-v0)/v0*100:0;
-    const maxPct=portArr[0]?ttl?portArr[0][1].total/ttl*100:100:100;
-    return`<div class="pcard">
-      <div class="pcard-accent" style="background:linear-gradient(90deg,${col},${col}55)"></div>
-      <div class="pc-name">
-        <span style="display:inline-block;width:8px;height:8px;border-radius:50%;background:${col};flex-shrink:0"></span>
-        ${p}
-      </div>
-      <div class="pc-val">${fC(b.total)}</div>
-      <div class="pc-pl ${b.pl>=0?'pos':'neg'}">${sgn(b.pl)}${fC(b.pl)}</div>
-      <div class="pc-prog-wrap">
-        <div class="pc-prog-label"><span>% del total</span><span style="color:${col};font-weight:700">${fP(pct)}</span></div>
-        <div class="pc-prog"><div class="pc-prog-fill" style="width:${pct/maxPct*100}%;background:${col}"></div></div>
-      </div>
-      <div class="pc-sep"></div>
-      <div class="pc-row"><span>Causación mer.</span><span>${fC(b.caus)}</span></div>
-      <div class="pc-row"><span>Posiciones</span><span>${b.n}</span></div>
-      <div class="pc-row"><span>Var. período</span><span style="color:${delta>=0?'var(--g)':'var(--r)'};font-weight:700">${sgn(delta)}${fP(delta)}</span></div>
-    </div>`;
-  }).join('');
+  // Portfolio cards — usa buildPortCards para evitar template literals con var(--)
+  document.getElementById('portCards').innerHTML = buildPortCards(rows, ttl);
 }
 
 
