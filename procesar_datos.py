@@ -7,7 +7,7 @@
 # ║  Universal: funciona en cualquier PC sin cambiar rutas          ║
 # ╚══════════════════════════════════════════════════════════════════╝
 
-import os, re, glob, json, subprocess, warnings, hashlib
+import os, re, glob, json, warnings, hashlib
 from datetime import datetime
 from pathlib import Path
 
@@ -17,17 +17,27 @@ import numpy as np
 warnings.filterwarnings("ignore")
 
 # ══════════════════════════════════════════════════════════════════
-#  ★  ÚNICA LÍNEA QUE DEBES CAMBIAR EN OTRO PC
-#     Pon la ruta de la carpeta donde están tus archivos CSV/XLSX.
-#     Deja "" para usar la misma carpeta donde está este script.
-# ══════════════════════════════════════════════════════════════════
-CARPETA_DATOS = ""
+#  ★  CONFIGURA ESTAS DOS COSAS — lo demás no lo toques
 # ══════════════════════════════════════════════════════════════════
 
-# Ruta raíz del script (donde está procesar_datos.py)
+# 1. Carpeta donde están tus archivos CSV/XLSX
+#    Puede ser cualquier ruta del PC. Ej: r"C:\Datos\Posiciones"
+CARPETA_DATOS = r"C:\Users\danie\Sapienza\POSPRO"
+
+# 2. Token de GitHub para subir los datos
+#    Crea uno en: https://github.com/settings/tokens
+#    Permisos necesarios: repo (full control)
+GITHUB_TOKEN = ""   # ← pegar tu token aquí
+
+# ══════════════════════════════════════════════════════════════════
+#  Repositorio de destino — cambiar si usas uno diferente
+GITHUB_REPO  = "Danielskan10/POSPROP"    # usuario/repositorio
+GITHUB_BRANCH = "main"
+# ══════════════════════════════════════════════════════════════════
+
+# Rutas internas (no tocar)
 _SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
-# Carpeta de datos: la configurada arriba, o la misma del script
-ROOT = CARPETA_DATOS.strip() if CARPETA_DATOS.strip() else _SCRIPT_DIR
+ROOT        = CARPETA_DATOS.strip() if CARPETA_DATOS.strip() else _SCRIPT_DIR
 
 # ┌─────────────────────────────────────────────────────────────────┐
 # │  Lo demás no necesitas tocarlo                                   │
@@ -937,154 +947,122 @@ def build_json(m):
 #  HELPERS GIT
 # ══════════════════════════════════════════════════════════════════
 
-def _git(args, **kw):
-    return subprocess.run(["git","-C",ROOT]+args, capture_output=True, text=True, **kw)
+# ══════════════════════════════════════════════════════════════════
+#  SUBIDA A GITHUB VIA API — no necesita git instalado ni repo
+#  clonado. Solo necesita el token configurado arriba.
+# ══════════════════════════════════════════════════════════════════
 
-def get_github_info():
-    """Devuelve (user, repo, branch) desde el remote origin, o None."""
-    r = _git(["remote","get-url","origin"])
-    remote = r.stdout.strip()
-    m = re.search(r"github\.com[:/]([^/]+)/([^/.]+?)(?:\.git)?$", remote)
-    if not m:
-        return None, None, None
-    branch = CFG.get("git_branch","main")
-    return m.group(1), m.group(2), branch
+def _github_api(method, endpoint, body=None):
+    """Llama a la API de GitHub con urllib (sin dependencias externas)."""
+    import urllib.request, urllib.error
+    token = GITHUB_TOKEN.strip()
+    if not token:
+        raise ValueError("GITHUB_TOKEN no configurado.")
+    url = f"https://api.github.com/{endpoint}"
+    data = json.dumps(body).encode() if body else None
+    req  = urllib.request.Request(url, data=data, method=method)
+    req.add_header("Authorization", f"token {token}")
+    req.add_header("Accept", "application/vnd.github+json")
+    req.add_header("Content-Type", "application/json")
+    try:
+        with urllib.request.urlopen(req) as resp:
+            return json.loads(resp.read()), resp.status
+    except urllib.error.HTTPError as e:
+        body_err = e.read().decode()
+        raise RuntimeError(f"GitHub API {e.code}: {body_err}") from e
 
-def ensure_gitignore():
-    """Crea o actualiza .gitignore para excluir archivos locales innecesarios."""
-    gi_path = os.path.join(ROOT, ".gitignore")
-    lines_needed = [
-        "__pycache__/", "*.pyc", "*.pyo",
-        ".cache_procesado.json",
-        "posiciones_consolidadas.xlsx",
-        "watcher.log",
-        "*.log",
-        # NO ignoramos data.json ni index.html — deben subir a GitHub Pages
-    ]
-    existing = set()
-    if os.path.exists(gi_path):
-        with open(gi_path, encoding="utf-8") as f:
-            existing = {l.strip() for l in f if l.strip()}
-    nuevos = [l for l in lines_needed if l not in existing]
-    if nuevos:
-        with open(gi_path, "a", encoding="utf-8") as f:
-            if existing:
-                f.write("\n")
-            f.write("\n".join(nuevos) + "\n")
-        print(f"  .gitignore actualizado (+{len(nuevos)} entradas)")
-    return gi_path
+def github_push_file(local_path, repo_path, commit_msg):
+    """
+    Sube un archivo a GitHub via API.
+    - local_path : ruta local del archivo a subir
+    - repo_path  : ruta dentro del repo (ej: "data.json")
+    - commit_msg : mensaje del commit
+    Devuelve True si tuvo éxito.
+    """
+    import base64
+    repo = GITHUB_REPO.strip()
 
-def git_push_files(files, msg):
-    """Hace add+commit+push de los archivos indicados."""
-    for f in files:
-        if os.path.exists(f):
-            rel = os.path.relpath(f, ROOT)
-            r = _git(["add", rel])
-            if r.returncode != 0:
-                print(f"  [WARN] git add {rel}: {r.stderr.strip()}")
+    # Leer el archivo
+    with open(local_path, "rb") as f:
+        content_b64 = base64.b64encode(f.read()).decode()
 
-    r = _git(["commit","-m", msg])
-    committed = r.returncode == 0
-    nothing   = "nothing to commit" in r.stdout + r.stderr
-    if committed:
-        print(f"  git commit: OK")
-    elif nothing:
-        print(f"  git commit: sin cambios nuevos")
-    else:
-        print(f"  git commit: {r.stderr.strip()}")
+    # Obtener el SHA actual del archivo (necesario para actualizar)
+    sha = None
+    try:
+        info, _ = _github_api("GET", f"repos/{repo}/contents/{repo_path}")
+        sha = info.get("sha")
+    except RuntimeError as e:
+        if "404" not in str(e):
+            raise   # si es otro error, relanzar
+        # 404 = archivo nuevo, no hay SHA
 
-    r = _git(["push"])
-    if r.returncode == 0:
-        print("  git push:   OK ✓")
+    # Preparar el body del commit
+    body = {
+        "message": commit_msg,
+        "content": content_b64,
+        "branch":  GITHUB_BRANCH,
+    }
+    if sha:
+        body["sha"] = sha
+
+    _github_api("PUT", f"repos/{repo}/contents/{repo_path}", body)
+    return True
+
+def verificar_token():
+    """Verifica que el token de GitHub sea válido y tenga permisos."""
+    token = GITHUB_TOKEN.strip()
+    if not token:
+        print("\n  [ERROR] GITHUB_TOKEN está vacío.")
+        print("  Pasos:")
+        print("  1. Ve a https://github.com/settings/tokens")
+        print("  2. 'Generate new token (classic)'")
+        print("  3. Marca el permiso: repo (Full control)")
+        print("  4. Copia el token y pégalo en GITHUB_TOKEN en este script.")
+        return False
+    try:
+        info, _ = _github_api("GET", f"repos/{GITHUB_REPO}")
+        print(f"  Repositorio : {info['html_url']}")
+        pages_url = f"https://{info['owner']['login']}.github.io/{info['name']}/"
+        print(f"  Dashboard   : {pages_url}")
         return True
-    else:
-        print(f"  git push:   ERROR — {r.stderr.strip()}")
+    except RuntimeError as e:
+        if "401" in str(e):
+            print("\n  [ERROR] Token inválido o expirado.")
+            print("  Genera uno nuevo en: https://github.com/settings/tokens")
+        elif "404" in str(e):
+            print(f"\n  [ERROR] Repositorio '{GITHUB_REPO}' no encontrado.")
+            print("  Verifica que GITHUB_REPO esté bien escrito.")
+        else:
+            print(f"\n  [ERROR] {e}")
         return False
 
 # ══════════════════════════════════════════════════════════════════
 #  MAIN
 # ══════════════════════════════════════════════════════════════════
 
-def verificar_git_credenciales():
-    """
-    Verifica que git tenga credenciales configuradas para hacer push.
-    Si no las tiene, guía al usuario paso a paso.
-    Devuelve True si todo está OK.
-    """
-    # Verificar que git esté instalado
-    r = subprocess.run(["git", "--version"], capture_output=True, text=True)
-    if r.returncode != 0:
-        print("\n  [ERROR] Git no está instalado.")
-        print("  Descárgalo en: https://git-scm.com/downloads")
-        return False
-
-    # Verificar que hay un repo git en ROOT
-    r = _git(["rev-parse", "--git-dir"])
-    if r.returncode != 0:
-        print(f"\n  [ERROR] La carpeta '{ROOT}' no es un repositorio git.")
-        print("  Solución: clona el repositorio con:")
-        print(f"    git clone https://github.com/Danielskan10/POSPROP \"{ROOT}\"")
-        return False
-
-    # Verificar que hay remote origin
-    r = _git(["remote", "get-url", "origin"])
-    if r.returncode != 0:
-        print("\n  [ERROR] No hay remote 'origin' configurado.")
-        print("  Solución:")
-        print(f"    git -C \"{ROOT}\" remote add origin https://github.com/Danielskan10/POSPROP")
-        return False
-
-    # Test de autenticación: hacer un fetch dry-run
-    r = _git(["ls-remote", "--heads", "origin"])
-    if r.returncode != 0:
-        err = r.stderr.strip()
-        print(f"\n  [ERROR] No se puede conectar a GitHub: {err}")
-        print("\n  ── Cómo configurar credenciales ──────────────────────")
-        print("  1. Ve a https://github.com/settings/tokens")
-        print("  2. Generate new token (classic) → marca 'repo' → copia el token")
-        print("  3. Ejecuta en la terminal:")
-        remote_url = _git(["remote", "get-url", "origin"]).stdout.strip()
-        m = re.search(r"github\.com[:/](.+?)(?:\.git)?$", remote_url)
-        repo_path  = m.group(1) if m else "Danielskan10/POSPROP"
-        print(f"     git -C \"{ROOT}\" remote set-url origin https://TU_USUARIO:TU_TOKEN@github.com/{repo_path}")
-        print("  4. Vuelve a correr el script.")
-        print("  ─────────────────────────────────────────────────────")
-        return False
-
-    return True
-
-
 def main():
-    LINE = "═" * 64
-    print(f"\n  {LINE}")
-    print(f"  ║  SAPIENZA · Procesador de Posiciones de Portafolio   ║")
-    print(f"  {LINE}")
+    repo        = GITHUB_REPO.strip()
+    gh_user     = repo.split("/")[0] if "/" in repo else ""
+    gh_repo_name= repo.split("/")[1] if "/" in repo else repo
+    pages_url   = f"https://{gh_user}.github.io/{gh_repo_name}/" if gh_user else ""
+    repo_url    = f"https://github.com/{repo}"
 
-    # ── 0. Setup ─────────────────────────────────────────────────
+    print(f"\n  {'═'*56}")
+    print(f"  ║  SAPIENZA · Procesador de Posiciones de Portafolio  ║")
+    print(f"  {'═'*56}")
+    print(f"\n  Repositorio : {repo_url}")
+    print(f"  Dashboard   : {pages_url or '[configura GITHUB_REPO]'}")
+    print(f"  Datos       : {ROOT}")
+
+    # ── 0. Verificar token antes de procesar ─────────────────────
+    print()
+    if not verificar_token():
+        raise SystemExit(1)
+
+    # ── 1. Caché + CSV → XLSX ────────────────────────────────────
     cache = cargar_cache()
-    gi_path = ensure_gitignore()
-
-    # Detectar repositorio y URL del dashboard
-    gh_user, gh_repo, _ = get_github_info()
-    remote_url = _git(["remote", "get-url", "origin"]).stdout.strip()
-
-    print(f"\n  Repositorio : {remote_url or '[no configurado]'}")
-    if gh_user:
-        pages_url = f"https://{gh_user}.github.io/{gh_repo}/"
-        print(f"  Dashboard   : {pages_url}")
-    else:
-        pages_url = ""
-        print(f"  Dashboard   : [GitHub Pages no detectado]")
-    print(f"  Caché       : {len(cache)} archivos registrados")
-    print(f"  Carpeta     : {ROOT}\n")
-
-    # Verificar credenciales antes de procesar
-    if CFG["git_push"]:
-        if not verificar_git_credenciales():
-            raise SystemExit(1)
-
-    # ── 1. CSV → XLSX ────────────────────────────────────────────
-    print("[1/4] Convirtiendo CSV a XLSX...")
+    print(f"\n  Caché       : {len(cache)} archivos registrados")
+    print(f"\n[1/4] Convirtiendo CSV a XLSX...")
     convertir_csvs(cache)
 
     # ── 2. Cargar datos ──────────────────────────────────────────
@@ -1093,17 +1071,14 @@ def main():
 
     if not hay_nuevos:
         print("\n  ✓ Sin archivos nuevos — data.json ya está actualizado.")
-        if pages_url:
-            print(f"\n  Dashboard: {pages_url}")
+        print(f"\n  Dashboard: {pages_url}")
         return
 
-    # ── 3. Construir y guardar data.json ─────────────────────────
+    # ── 3. Construir data.json ───────────────────────────────────
     guardar_cache(cache)
-    print(f"\n[3/4] Construyendo data.json...")
+    print("\n[3/4] Construyendo data.json...")
     data = build_json(master)
-
-    if gh_user:
-        data["meta"]["data_url"] = f"https://{gh_user}.github.io/{gh_repo}/data.json"
+    data["meta"]["data_url"] = f"https://{gh_user}.github.io/{gh_repo_name}/data.json"
 
     json_out = CFG["output_json"]
     with open(json_out, "w", encoding="utf-8") as f:
@@ -1112,43 +1087,34 @@ def main():
     kb = os.path.getsize(json_out) // 1024
     print(f"  data.json  : {kb} KB  ({data['meta']['n_fechas']} fechas)")
 
-    # ── Resumen de datos ─────────────────────────────────────────
     k = data["kpis"]; s = data["stats"]
-    print(f"\n  {'─'*50}")
+    print(f"\n  {'─'*48}")
     print(f"  Fecha posición   : {data['meta']['ultimo_dia']}")
     print(f"  Total portafolio : ${k['total']:>22,.0f}")
     print(f"  P&L del día      : ${k['pl']:>+22,.0f}  ({k['var_pct']:+.3f}%)")
     print(f"  P&L acumulado    : ${s['pl_acum']:>+22,.0f}")
-    print(f"  Hit rate         : {s.get('hit_rate', 0):.1f}%   Sharpe: {s['sharpe']}")
+    print(f"  Hit rate         : {s.get('hit_rate',0):.1f}%   Sharpe: {s['sharpe']}")
     print(f"  TIR ponderada    : {str(k['tir_pond'])+'%':>24}")
     print(f"  Exp. FX          : ${k['fx_total']:>22,.0f}  ({k['fx_pct']:.1f}%)")
-    print(f"  {'─'*50}")
+    print(f"  {'─'*48}")
 
-    # ── 4. Git push — solo data.json ─────────────────────────────
-    # El index.html y app.js ya están publicados en GitHub Pages
-    # y no cambian con los datos. Solo se sube data.json.
-    if CFG["git_push"]:
-        print(f"\n[4/4] Subiendo data.json a GitHub...")
-        fecha = datetime.now().strftime("%Y-%m-%d %H:%M")
-        msg   = CFG["git_msg"].format(fecha=fecha)
-        ok    = git_push_files([json_out, gi_path], msg)
-
+    # ── 4. Subir data.json via API de GitHub ─────────────────────
+    print("\n[4/4] Subiendo data.json a GitHub...")
+    fecha = datetime.now().strftime("%Y-%m-%d %H:%M")
+    msg   = CFG["git_msg"].format(fecha=fecha)
+    try:
+        github_push_file(json_out, "data.json", msg)
         print()
-        if ok:
-            print(f"  ╔{'═'*55}╗")
-            print(f"  ║  ✓ Datos publicados correctamente                      ║")
-            print(f"  ╠{'═'*55}╣")
-            print(f"  ║  Dashboard → {pages_url:<40} ║")
-            print(f"  ║  Repo      → {remote_url:<40} ║")
-            print(f"  ╚{'═'*55}╝")
-            print(f"\n  El dashboard mostrará los datos nuevos en ~1 minuto.")
-        else:
-            print(f"  [ERROR] El push falló. Verifica las credenciales de git.")
-            print(f"  Los datos se guardaron localmente en: {json_out}")
-    else:
-        print(f"\n[4/4] Git push desactivado.")
-        if pages_url:
-            print(f"  Dashboard: {pages_url}")
+        print(f"  ╔{'═'*52}╗")
+        print(f"  ║  ✓ Datos publicados correctamente               ║")
+        print(f"  ╠{'═'*52}╣")
+        print(f"  ║  Dashboard : {pages_url:<38} ║")
+        print(f"  ║  Repo      : {repo_url:<38} ║")
+        print(f"  ╚{'═'*52}╝")
+        print(f"\n  El dashboard mostrará los datos nuevos en ~1 minuto.")
+    except Exception as e:
+        print(f"\n  [ERROR] No se pudo subir data.json: {e}")
+        print(f"  El archivo quedó guardado localmente en: {json_out}")
     print("\n  Abriendo dashboard local…")
 
 
