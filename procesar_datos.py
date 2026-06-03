@@ -16,18 +16,25 @@ import numpy as np
 
 warnings.filterwarnings("ignore")
 
-# ── Ruta raíz: siempre la carpeta donde está este script ──────────
-# Funciona en cualquier PC sin importar dónde esté instalado.
-ROOT = os.path.dirname(os.path.abspath(__file__))
+# ══════════════════════════════════════════════════════════════════
+#  ★  ÚNICA LÍNEA QUE DEBES CAMBIAR EN OTRO PC
+#     Pon la ruta de la carpeta donde están tus archivos CSV/XLSX.
+#     Deja "" para usar la misma carpeta donde está este script.
+# ══════════════════════════════════════════════════════════════════
+CARPETA_DATOS = ""
+# ══════════════════════════════════════════════════════════════════
+
+# Ruta raíz del script (donde está procesar_datos.py)
+_SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
+# Carpeta de datos: la configurada arriba, o la misma del script
+ROOT = CARPETA_DATOS.strip() if CARPETA_DATOS.strip() else _SCRIPT_DIR
 
 # ┌─────────────────────────────────────────────────────────────────┐
-# │  ★  CONFIGURACIÓN — solo editar aquí                            │
+# │  Lo demás no necesitas tocarlo                                   │
 # └─────────────────────────────────────────────────────────────────┘
 CFG = {
-    # ── Rutas (relativas al script — no cambiar) ──────────────────
-    # ROOT se calcula automáticamente arriba
-    "output_json":   os.path.join(ROOT, "data.json"),
-    "cache_file":    os.path.join(ROOT, ".cache_procesado.json"),
+    "output_json":   os.path.join(_SCRIPT_DIR, "data.json"),
+    "cache_file":    os.path.join(_SCRIPT_DIR, ".cache_procesado.json"),
 
     # ── Git ──────────────────────────────────────────────────────
     "git_push":   True,
