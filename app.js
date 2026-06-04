@@ -295,6 +295,7 @@ function AF(){
   S.f.tipo =document.getElementById('fTipo').value;
   S.f.desde=document.getElementById('fDesde').value;
   S.f.hasta=document.getElementById('fHasta').value;
+  updateCtxBanner();
   // Reset init state and rebuild current tab
   Object.values(CH).forEach(c=>c&&c.destroy());
   Object.keys(CH).forEach(k=>delete CH[k]);
@@ -432,24 +433,45 @@ const KPI_ICONS_SVG = [
   'M12 2a10 10 0 110 20 M2 12h20',
 ];
 
+const KPI_TIPS = {
+  'Valor de Mercado': 'Cuanto valen hoy todos los activos al precio actual del mercado. Es el valor real del portafolio.',
+  'P&L del Dia': 'Ganancia o perdida hoy vs ayer. Verde = ganancia, rojo = perdida.',
+  'P&L Acumulado': 'Suma de ganancias y perdidas del periodo. Negativo = mas perdidas que ganancias en total.',
+  'TIR Ponderada': 'Rendimiento anual promedio de los bonos ponderado por valor. Mayor % = mejor rendimiento esperado.',
+  'Causacion Mercado': 'Cuanto devengaron los activos segun precios reales del mercado hoy. El rendimiento real del dia.',
+  'Causacion TIR': 'Intereses teoricos con la tasa pactada al comprar. Casi siempre positivo porque los bonos generan interes diario.',
+  'Causacion FX': 'Efecto del tipo de cambio en activos en dolares o euros. Puede ser muy negativo si el peso se fortalece.',
+  'Causacion Tasa': 'Efecto del movimiento de tasas. Cuando suben las tasas de interes, los bonos pierden valor.',
+  'Caus. Mercado': 'Rendimiento real del dia a precios de mercado. Incluye todos los efectos.',
+  'Caus. TIR': 'Interes teorico con la tasa de compra. Casi siempre positivo.',
+  'Exp. FX': 'Valor total de activos en moneda extranjera (dolares, euros, etc.).',
+  'Posiciones': 'Numero de instrumentos (bonos, CDTs, fondos, etc.) que tiene el portafolio hoy.',
+  'Hit Rate': 'Porcentaje de dias con ganancia en el periodo. 60% = gano en 6 de cada 10 dias.',
+  'Volatilidad Anual': 'Que tanto fluctua el portafolio. Mayor numero = mayor variabilidad diaria.',
+  'Sharpe Anualizado': 'Relacion rendimiento/riesgo. Mayor a 1 = excelente. Entre 0 y 1 = aceptable. Negativo = el riesgo no se compensa.',
+  'Drawdown Max.': 'La mayor caida del portafolio desde su punto mas alto hasta el mas bajo del periodo.',
+  'Diferencia M-TIR': 'Brecha entre rendimiento de mercado y el teorico. Muy negativo = precios bajaron mas de lo esperado.',
+  'Total RF': 'Valor total de Renta Fija: TES (bonos del gobierno), CDT, TIDIS y titularizaciones.',
+  'Precio Promedio': 'Precio promedio de los bonos. 100 = precio par. Menor = descuento, mayor = prima.',
+  'Duracion (dias)': 'Dias promedio que quedan para que venzan los activos de renta fija, ponderado por valor.',
+};
+
 function kH(label,val,delta,signN,color,sub){
-  const dc=delta!=null?`<div class="kd ${signN>0?'pos':signN<0?'neg':'neu'}">${signN>0?'+':signN<0?'-':'~'} ${delta}</div>`:'';
+  const dc=delta!=null?'<div class="kd '+(signN>0?'pos':signN<0?'neg':'neu')+'">'+(signN>0?'+':signN<0?'-':'~')+' '+delta+'</div>':'';
   const vc=signN!=null?(signN>0?'pos':signN<0?'neg':''):'';
-  // Seleccionar icono por hash simple del label
   const icoIdx=label.split('').reduce((a,c)=>a+c.charCodeAt(0),0)%KPI_ICONS_SVG.length;
   const icoPath=KPI_ICONS_SVG[icoIdx];
-  return`<div class="kpi">
-    <div class="ka" style="background:linear-gradient(180deg,${color},${color}88)"></div>
-    <div class="kpi-bg" style="background:${color}"></div>
-    <div class="kl">
-      <svg viewBox="0 0 24 24" style="stroke:${color};fill:none;stroke-width:2;stroke-linecap:round;stroke-linejoin:round"><path d="${icoPath}"/></svg>
-      ${label}
-    </div>
-    <div class="kv ${vc}">${val}</div>
-    ${dc}<div class="ks">${sub||''}</div>
-  </div>`;
+  const tip=KPI_TIPS[label]||'';
+  const tipHtml=tip?'<div class="kpi-help">?</div><div class="kpi-tip">'+tip+'</div>':'';
+  return '<div class="kpi">'
+    +'<div class="ka" style="background:linear-gradient(180deg,'+color+','+color+'88)"></div>'
+    +'<div class="kpi-bg" style="background:'+color+'"></div>'
+    +tipHtml
+    +'<div class="kl"><svg viewBox="0 0 24 24" style="stroke:'+color+';fill:none;stroke-width:2;stroke-linecap:round;stroke-linejoin:round"><path d="'+icoPath+'"/></svg>'+label+'</div>'
+    +'<div class="kv '+vc+'">'+val+'</div>'
+    +dc+'<div class="ks">'+(sub||'')+'</div>'
+    +'</div>';
 }
-
 // ─── INSIGHTS ─────────────────────────────────────────────────
 function initInsights(){
   document.getElementById('insRow').innerHTML=
@@ -545,6 +567,7 @@ function initResumen(){
     kH('Exp. FX',fC(fxTotal),null,null,'#f97316','En moneda extranjera');
 
   document.getElementById('portCards').innerHTML = buildPortCards(rows, total);
+  initBadDayPanel();
 
   const lbs=dateL(ev.fechas);
   mkC('cGA',{type:'line',data:{labels:lbs,datasets:[{
@@ -1941,6 +1964,106 @@ function initTab(t){
   if(t==='detalle')      initDetalle();
 }
 
+
+// ════════════════════════════════════════════════
+// GLOSARIO
+// ════════════════════════════════════════════════
+function openGlos(){ document.getElementById('glosOverlay').classList.add('on'); }
+function closeGlos(){ document.getElementById('glosOverlay').classList.remove('on'); }
+function closeGlosOut(e){ if(e.target===document.getElementById('glosOverlay')) closeGlos(); }
+
+// ════════════════════════════════════════════════
+// BANNER CONTEXTUAL
+// ════════════════════════════════════════════════
+function updateCtxBanner(){
+  var desde = S.f.desde || D.fechas[0];
+  var hasta = S.f.hasta || D.fechas[D.fechas.length-1];
+  var ultimoDia = D.meta.ultimo_dia;
+  var nFechas = FF().length;
+  var elDia = document.getElementById('ctxDia');
+  var elPeriodo = document.getElementById('ctxPeriodo');
+  var elN = document.getElementById('ctxNFechas');
+  var elFiltroWrap = document.getElementById('ctxFiltroWrap');
+  var elFiltro = document.getElementById('ctxFiltro');
+  if(elDia) elDia.textContent = ultimoDia;
+  if(elPeriodo){
+    if(desde === hasta) elPeriodo.textContent = desde + ' (un solo dia)';
+    else elPeriodo.textContent = desde + ' a ' + hasta;
+  }
+  if(elN) elN.textContent = nFechas;
+  var filtros = [];
+  if(S.f.port) filtros.push('Portafolio: ' + S.f.port);
+  if(S.f.tipo) filtros.push('Tipo: ' + S.f.tipo);
+  if(elFiltroWrap && elFiltro){
+    if(filtros.length){ elFiltroWrap.style.display='flex'; elFiltro.textContent=filtros.join(' y '); }
+    else elFiltroWrap.style.display='none';
+  }
+}
+
+// ════════════════════════════════════════════════
+// PANEL DIA NEGATIVO
+// ════════════════════════════════════════════════
+function toggleBadDay(){
+  var body = document.getElementById('bdpBody');
+  var icon = document.getElementById('bdpToggleIcon');
+  if(!body) return;
+  body.classList.toggle('open');
+  if(icon) icon.textContent = body.classList.contains('open') ? '▲ Ocultar' : '▼ Ver explicacion';
+}
+
+function initBadDayPanel(){
+  var ev = FE();
+  var pl = ev.pl;
+  if(!pl || pl.length < 2) return;
+  var minIdx = 0;
+  pl.forEach(function(v,i){ if(v!=null && (pl[minIdx]==null || v < pl[minIdx])) minIdx=i; });
+  var minVal = pl[minIdx];
+  if(minVal == null || minVal > -1000000) return;
+  var fecha = ev.fechas[minIdx];
+  var total = (ev.total && ev.total[minIdx]) || 1;
+  var pct = (minVal / total * 100).toFixed(3);
+  var causMer = ev.caus_mer ? ev.caus_mer[minIdx] : null;
+  var causTir = ev.caus_tir ? ev.caus_tir[minIdx] : null;
+  var causMon = ev.caus_mon ? ev.caus_mon[minIdx] : null;
+  var causTasa = ev.caus_tasa ? ev.caus_tasa[minIdx] : null;
+  var diffMT = (causMer != null && causTir != null) ? causMer - causTir : null;
+  var panel = document.getElementById('badDayPanel');
+  var titleEl = document.getElementById('bdpTitle');
+  var subEl = document.getElementById('bdpSub');
+  var body = document.getElementById('bdpBody');
+  if(!panel || !body) return;
+  panel.style.display = 'block';
+  if(titleEl) titleEl.textContent = 'Dia con mayor perdida del periodo: ' + fecha;
+  if(subEl) subEl.textContent = fC(minVal) + ' (' + pct + '% del portafolio ese dia)';
+  var rows = [];
+  var causas = [];
+  if(diffMT != null && diffMT < -500000)
+    causas.push({label:'Efecto precio de mercado (M-TIR)', val:diffMT,
+      desc:'Los precios de los activos bajaron mas de lo teorico. Ocurre por noticias macro, cambios en tasas del Banco de la Republica o movimientos externos.'});
+  if(causMon != null && causMon < -500000)
+    causas.push({label:'Efecto tipo de cambio (FX)', val:causMon,
+      desc:'Activos en moneda extranjera perdieron valor en pesos. Pasa cuando el dolar o euro baja contra el peso colombiano.'});
+  if(causTasa != null && causTasa < -500000)
+    causas.push({label:'Efecto tasas de interes', val:causTasa,
+      desc:'Un alza en las tasas de interes redujo el valor de los bonos (relacion inversa: tasas suben, bonos bajan de precio).'});
+  causas.sort(function(a,b){ return a.val - b.val; });
+  if(causas.length === 0){
+    rows.push({icon:'📊', text:'La perdida de <b class="neg">'+fC(minVal)+'</b> en <b>'+fecha+'</b> fue causada por el movimiento general del mercado ese dia.'});
+  } else {
+    rows.push({icon:'⚠️', text:'La perdida de <b class="neg">'+fC(minVal)+'</b> en <b>'+fecha+'</b> tuvo '+causas.length+' causa(s) principal(es):'});
+    causas.forEach(function(c,i){
+      rows.push({icon:(i+1)+'.', text:'<b>'+c.label+':</b> <span class="neg">'+fC(c.val)+'</span><br><span style="font-size:10.5px;opacity:.85">'+c.desc+'</span>'});
+    });
+  }
+  var plArr = pl.filter(function(v){ return v!=null; });
+  var avgPl = plArr.length ? plArr.reduce(function(a,v){ return a+v; },0) / plArr.length : 0;
+  if(avgPl > 0)
+    rows.push({icon:'💡', text:'A pesar de este dia, el promedio diario del periodo es <span class="pos">'+fC(avgPl)+'</span>. Un dia negativo aislado no indica necesariamente un problema estructural.'});
+  body.innerHTML = rows.map(function(r){
+    return '<div class="bdp-row"><div class="bdp-icon">'+r.icon+'</div><div class="bdp-text">'+r.text+'</div></div>';
+  }).join('');
+}
+
 async function startApp(D_data){
   window.D=D_data;
   setLoad('Aplicando tema…', 85);
@@ -1955,6 +2078,7 @@ async function startApp(D_data){
   initFilters();
 
   if(UI_CFG.insightsPos!=='none') initInsights();
+  updateCtxBanner();
 
   // Tab por defecto (nuevo nombre: resumen)
   const defaultTab = (UI_CFG.tabDefault||'resumen').replace('general','resumen');

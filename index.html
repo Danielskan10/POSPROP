@@ -448,6 +448,105 @@ tr.drill-row:hover td{background:rgba(0,133,74,.06)!important}
 /* ═══ SCROLLBAR CUSTOM COLORS ═════════════════════════════════ */
 * { scrollbar-width: thin; scrollbar-color: var(--bd2) transparent; }
 
+/* ═══ BANNER CONTEXTUAL ════════════════════════════════════════ */
+#ctxBanner{
+  background:linear-gradient(90deg,rgba(0,133,74,.08),rgba(59,130,246,.06));
+  border-bottom:1px solid var(--bd);
+  padding:8px 24px;
+  display:flex;align-items:center;gap:16px;flex-wrap:wrap;
+  font-size:11.5px;position:sticky;top:calc(var(--hh)+var(--fh)+var(--th));z-index:270
+}
+.ctx-item{display:flex;align-items:center;gap:5px;color:var(--tx2)}
+.ctx-item b{color:var(--tx);font-weight:600}
+.ctx-sep{width:1px;height:14px;background:var(--bd)}
+.ctx-badge{padding:2px 8px;border-radius:4px;font-size:10px;font-weight:700}
+.ctx-badge.periodo{background:var(--b3);color:var(--b2)}
+.ctx-badge.hoy{background:var(--g3);color:var(--g2)}
+
+/* ═══ KPI TOOLTIP ══════════════════════════════════════════════ */
+.kpi{position:relative}
+.kpi-help{
+  position:absolute;top:8px;right:8px;
+  width:16px;height:16px;border-radius:50%;
+  border:1px solid var(--bd2);color:var(--tx3);
+  font-size:9px;font-weight:700;display:grid;place-items:center;
+  cursor:help;transition:all var(--trans)
+}
+.kpi-help:hover{border-color:var(--b);color:var(--b);background:var(--b3)}
+.kpi-tip{
+  position:absolute;top:28px;right:0;z-index:100;
+  background:var(--s1);border:1px solid var(--bd2);border-radius:9px;
+  padding:10px 13px;font-size:11px;color:var(--tx2);
+  width:220px;line-height:1.6;box-shadow:var(--shd);
+  display:none;pointer-events:none
+}
+.kpi-help:hover + .kpi-tip,
+.kpi-tip:hover{display:block}
+.kpi-tip b{color:var(--tx);font-weight:600}
+.kpi-tip .tip-pos{color:var(--g);font-weight:600}
+.kpi-tip .tip-neg{color:var(--r);font-weight:600}
+
+/* ═══ EXPLAINER BOXES ══════════════════════════════════════════ */
+.explainer{
+  background:var(--s2);border:1px solid var(--bd);
+  border-left:3px solid var(--b);
+  border-radius:0 var(--rad2) var(--rad2) 0;
+  padding:11px 15px;font-size:11.5px;
+  color:var(--tx2);line-height:1.7;margin-bottom:14px
+}
+.explainer b{color:var(--tx);font-weight:600}
+.explainer.warn{border-left-color:var(--y)}
+.explainer.neg{border-left-color:var(--r)}
+.explainer.pos{border-left-color:var(--g)}
+
+/* ═══ PANEL DÍA NEGATIVO ══════════════════════════════════════ */
+#badDayPanel{
+  border:1px solid rgba(239,68,68,.3);border-radius:var(--rad);
+  background:rgba(239,68,68,.04);overflow:hidden;margin-bottom:4px
+}
+.bdp-header{
+  display:flex;align-items:center;gap:10px;padding:12px 18px;
+  background:rgba(239,68,68,.07);border-bottom:1px solid rgba(239,68,68,.15);
+  cursor:pointer;user-select:none
+}
+.bdp-title{font-size:13px;font-weight:700;color:var(--r)}
+.bdp-sub{font-size:11px;color:var(--tx2);margin-left:auto}
+.bdp-body{padding:16px 18px;display:none}
+.bdp-body.open{display:block}
+.bdp-row{display:flex;gap:8px;align-items:flex-start;padding:7px 0;border-bottom:1px solid rgba(239,68,68,.1)}
+.bdp-row:last-child{border-bottom:none}
+.bdp-icon{font-size:15px;flex-shrink:0;width:22px;text-align:center;margin-top:1px}
+.bdp-text{font-size:11.5px;color:var(--tx2);line-height:1.6}
+.bdp-text b{color:var(--tx);font-weight:600}
+.bdp-text .neg{color:var(--r);font-weight:600}
+.bdp-text .pos{color:var(--g);font-weight:600}
+
+/* ═══ GLOSARIO ═════════════════════════════════════════════════ */
+#glosOverlay{
+  position:fixed;inset:0;background:rgba(0,0,0,.72);z-index:500;
+  display:none;align-items:flex-end;justify-content:flex-end;padding:24px;
+  backdrop-filter:blur(4px)
+}
+#glosOverlay.on{display:flex}
+#glosPanel{
+  background:var(--s1);border:1px solid var(--bd2);border-radius:16px;
+  width:380px;max-height:80vh;overflow:hidden;
+  box-shadow:var(--shd);display:flex;flex-direction:column
+}
+.glos-hdr{
+  display:flex;align-items:center;justify-content:space-between;
+  padding:18px 20px 14px;border-bottom:1px solid var(--bd)
+}
+.glos-title{font-size:16px;font-weight:700}
+.glos-body{overflow-y:auto;padding:4px 0 12px}
+.glos-item{padding:10px 20px}
+.glos-item:hover{background:var(--s2)}
+.glos-term{font-size:12px;font-weight:700;color:var(--tx);margin-bottom:3px;display:flex;align-items:center;gap:6px}
+.glos-def{font-size:11px;color:var(--tx2);line-height:1.6}
+.glos-cat{font-size:9px;font-weight:700;text-transform:uppercase;letter-spacing:.6px;
+  padding:2px 6px;border-radius:4px;background:var(--s3);color:var(--tx3)}
+.glos-sep{height:1px;background:var(--bd);margin:6px 16px}
+
 /* ═══ RESPONSIVE ═════════════════════════════════════════════════ */
 @media(max-width:1280px){
   .g6{grid-template-columns:repeat(3,1fr)}
@@ -515,32 +614,47 @@ tr.drill-row:hover td{background:rgba(0,133,74,.06)!important}
     </div>
   </div>
   <button class="btn-sm" onclick="openCfg()"><svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 00.33 1.82l.06.06a2 2 0 010 2.83 2 2 0 01-2.83 0l-.06-.06a1.65 1.65 0 00-1.82-.33 1.65 1.65 0 00-1 1.51V21a2 2 0 01-4 0v-.09A1.65 1.65 0 009 19.4a1.65 1.65 0 00-1.82.33l-.06.06a2 2 0 01-2.83-2.83l.06-.06A1.65 1.65 0 004.68 15a1.65 1.65 0 00-1.51-1H3a2 2 0 010-4h.09A1.65 1.65 0 004.6 9a1.65 1.65 0 00-.33-1.82l-.06-.06a2 2 0 012.83-2.83l.06.06A1.65 1.65 0 009 4.68a1.65 1.65 0 001-1.51V3a2 2 0 014 0v.09a1.65 1.65 0 001 1.51 1.65 1.65 0 001.82-.33l.06-.06a2 2 0 012.83 2.83l-.06.06A1.65 1.65 0 0019.4 9a1.65 1.65 0 001.51 1H21a2 2 0 010 4h-.09a1.65 1.65 0 00-1.51 1z"/></svg>Config.</button>
+  <button class="btn-sm" onclick="openGlos()">
+    <svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/></svg>
+    Glosario
+  </button>
   <button class="btn-sm" onclick="toggleTheme()">◐ Tema</button>
 </header>
 
+<!-- BANNER CONTEXTUAL — siempre visible, explica qué se está viendo -->
+<div id="ctxBanner">
+  <div class="ctx-item">📅 <b>Mostrando datos del día:</b> <span id="ctxDia">—</span></div>
+  <div class="ctx-sep"></div>
+  <div class="ctx-item">📆 <b>Período analizado:</b> <span id="ctxPeriodo">—</span></div>
+  <div class="ctx-sep"></div>
+  <div class="ctx-item">📊 <b>Fechas disponibles:</b> <span id="ctxNFechas">—</span> días de datos</div>
+  <div class="ctx-sep"></div>
+  <div class="ctx-item" id="ctxFiltroWrap" style="display:none">🔍 <b>Filtro activo:</b> <span id="ctxFiltro" style="color:var(--y);font-weight:600"></span></div>
+</div>
+
 <!-- FILTER BAR -->
 <div id="fbar">
-  <span class="fl">Filtrar por</span>
-  <select id="fPort" onchange="AF()"><option value="">Todos los portafolios</option></select>
-  <select id="fTipo" onchange="AF()"><option value="">Todos los tipos</option></select>
+  <span class="fl">Ver solo</span>
+  <select id="fPort" onchange="AF()" title="Filtra para ver solo un portafolio específico"><option value="">Todos los portafolios</option></select>
+  <select id="fTipo" onchange="AF()" title="Filtra por tipo de activo (TES, CDT, Fondos, etc.)"><option value="">Todos los tipos de activo</option></select>
   <div class="hdr-div"></div>
-  <span class="fl">Período</span>
+  <span class="fl">Período de fechas</span>
   <div class="f-range">
-    <select id="fDesde" onchange="AF()"></select>
-    <span>→</span>
-    <select id="fHasta" onchange="AF()"></select>
+    <select id="fDesde" onchange="AF()" title="Fecha de inicio del análisis"></select>
+    <span title="hasta">→</span>
+    <select id="fHasta" onchange="AF()" title="Fecha de fin del análisis"></select>
   </div>
-  <button class="btn-clear" onclick="CF()">✕ Limpiar</button>
+  <button class="btn-clear" onclick="CF()" title="Quitar todos los filtros y ver todos los datos">✕ Ver todo</button>
 </div>
 
 <!-- TABS — narrativa de lectura del portafolio -->
 <nav id="tnav">
-  <button class="tb on" data-t="resumen"      onclick="ST(this)">① Resumen</button>
-  <button class="tb"    data-t="composicion"  onclick="ST(this)">② Composición</button>
-  <button class="tb"    data-t="evolucion"    onclick="ST(this)">③ Evolución</button>
-  <button class="tb"    data-t="rendimiento"  onclick="ST(this)">④ Rendimiento</button>
-  <button class="tb"    data-t="instrumentos" onclick="ST(this)">⑤ Instrumentos</button>
-  <button class="tb"    data-t="detalle"      onclick="ST(this)">⑥ Detalle</button>
+  <button class="tb on" data-t="resumen"      onclick="ST(this)" title="Vista general: valor total, ganancias/pérdidas y estado de cada portafolio">① Resumen — ¿Cómo estamos?</button>
+  <button class="tb"    data-t="composicion"  onclick="ST(this)" title="¿En qué está invertido el dinero? Por tipo de activo, portafolio o moneda">② Composición — ¿En qué está invertido?</button>
+  <button class="tb"    data-t="evolucion"    onclick="ST(this)" title="Cómo ha cambiado el valor y las ganancias a lo largo del tiempo">③ Evolución — ¿Cómo ha cambiado?</button>
+  <button class="tb"    data-t="rendimiento"  onclick="ST(this)" title="Desglose de rendimientos: efecto de precios, tasas, tipo de cambio e intereses">④ Rendimiento — ¿Por qué subió/bajó?</button>
+  <button class="tb"    data-t="instrumentos" onclick="ST(this)" title="Detalle de los bonos y títulos: TIR, vencimientos, precios">⑤ Instrumentos — Bonos y títulos</button>
+  <button class="tb"    data-t="detalle"      onclick="ST(this)" title="Tabla completa con todas las posiciones y sus métricas">⑥ Detalle — Posición a posición</button>
 </nav>
 
 <!-- MAIN -->
@@ -551,18 +665,32 @@ tr.drill-row:hover td{background:rgba(0,133,74,.06)!important}
 ══════════════════════════════════════════════════════════════ -->
 <div id="pg-resumen" class="page on">
 
-  <!-- Alertas / insights automáticos -->
+  <!-- Alertas / insights automáticos — se generan automáticamente -->
   <div class="ins-row" id="insRow"></div>
 
-  <!-- KPIs principales: valor total, P&L, TIR, exposición -->
+  <!-- Panel días negativos — aparece solo cuando hay pérdidas significativas -->
+  <div id="badDayPanel" style="display:none">
+    <div class="bdp-header" onclick="toggleBadDay()">
+      <span style="font-size:16px">⚠️</span>
+      <span class="bdp-title" id="bdpTitle">Análisis del día con mayor pérdida</span>
+      <span class="bdp-sub" id="bdpSub"></span>
+      <span style="font-size:12px;color:var(--tx3);margin-left:8px" id="bdpToggleIcon">▼ Ver explicación</span>
+    </div>
+    <div class="bdp-body" id="bdpBody"></div>
+  </div>
+
+  <!-- KPIs principales: las métricas más importantes del portafolio -->
+  <div style="font-size:10px;color:var(--tx2);margin-bottom:-8px;letter-spacing:.5px;text-transform:uppercase;font-weight:700">
+    📊 Datos del último día disponible — pasa el cursor sobre cada cifra para entender qué significa
+  </div>
   <div class="g5" id="kpiA"></div>
   <div class="g5" id="kpiB"></div>
 
   <!-- Portafolios — cards con barra de peso -->
   <div class="sec">
     <div class="sec-l">
-      <div class="sec-t">Portafolios</div>
-      <div class="sec-s">Peso, P&amp;L del día y variación del período por portafolio</div>
+      <div class="sec-t">¿Cómo está cada portafolio hoy?</div>
+      <div class="sec-s">Cada portafolio gestiona un tipo de fondo diferente. Se muestra su valor actual, ganancia/pérdida del día y qué porcentaje representa del total.</div>
     </div>
   </div>
   <div class="g3" id="portCards"></div>
@@ -570,11 +698,17 @@ tr.drill-row:hover td{background:rgba(0,133,74,.06)!important}
   <!-- Mini gráficas de contexto rápido -->
   <div class="g2">
     <div class="card">
-      <div class="ct">Valor de mercado — últimos días</div>
+      <div class="ct">¿Cómo ha evolucionado el valor total?</div>
+      <div style="font-size:11px;color:var(--tx2);margin:-8px 0 10px;line-height:1.5">
+        Suma de todos los activos valorados a precio de mercado cada día. <b style="color:var(--g)">Sube</b> cuando los precios mejoran o hay nuevas inversiones.
+      </div>
       <div class="ch h220"><canvas id="cGA"></canvas></div>
     </div>
     <div class="card">
-      <div class="ct">P&amp;L diario + acumulado</div>
+      <div class="ct">Ganancia / Pérdida diaria y acumulada</div>
+      <div style="font-size:11px;color:var(--tx2);margin:-8px 0 10px;line-height:1.5">
+        <b style="color:var(--g)">Barras verdes</b> = días con ganancia. <b style="color:var(--r)">Barras rojas</b> = días con pérdida. La <b style="color:#a78bfa">línea morada</b> muestra la suma acumulada del período.
+      </div>
       <div class="ch h220"><canvas id="cGB"></canvas></div>
     </div>
   </div>
@@ -718,13 +852,14 @@ tr.drill-row:hover td{background:rgba(0,133,74,.06)!important}
   <!-- KPIs de rendimiento y riesgo -->
   <div class="g4" id="kpiRend"></div>
 
-  <!-- Causaciones: desglose del rendimiento generado -->
-  <div class="cinfo">
-    <b>Causación Mercado</b> = rendimiento a precios de mercado ·
-    <b>Causación TIR</b> = devengado teórico a la TIR de compra ·
-    <b>Diferencia M−TIR</b> = efecto precio ·
-    <b>Caus. FX</b> = efecto tipo de cambio ·
-    <b>Caus. Tasa</b> = efecto movimiento de tasas
+  <!-- Explicación clara de causaciones para no financieros -->
+  <div class="explainer">
+    <b>¿Por qué un día puede ser muy negativo?</b> Hay 4 causas posibles que se suman:<br>
+    · <b>Causación Mercado</b> — cuánto cambió el valor de los activos al precio del mercado ese día. <span class="tip-neg">Negativo</span> cuando los precios bajan.<br>
+    · <b>Causación TIR</b> — intereses devengados "teóricos" calculados con la tasa de compra (casi siempre positiva).<br>
+    · <b>Efecto precio (M−TIR)</b> — diferencia entre lo que dijo el mercado y lo teórico. Si el mercado bajó más de lo esperado, esta columna es <span class="tip-neg">muy negativa</span>.<br>
+    · <b>Efecto FX</b> — si hay activos en dólares/euros y la tasa de cambio se movió en contra, genera pérdidas.<br>
+    · <b>Efecto Tasa</b> — cuando suben las tasas de interés, los bonos existentes pierden valor.
   </div>
 
   <div class="g4" id="kpiCaus"></div>
@@ -1213,6 +1348,116 @@ tr.drill-row:hover td{background:rgba(0,133,74,.06)!important}
       <button class="btn-save" onclick="saveCfgModal()">Guardar y aplicar</button>
     </div>
 
+  </div>
+</div>
+
+<!-- ══════════════════════════════════════════════
+     MODAL GLOSARIO
+══════════════════════════════════════════════ -->
+<div id="glosOverlay" onclick="closeGlosOut(event)">
+  <div id="glosPanel">
+    <div class="glos-hdr">
+      <div class="glos-title">📖 Glosario de términos</div>
+      <button class="modal-close" onclick="closeGlos()">✕</button>
+    </div>
+    <div class="glos-body">
+
+      <div class="glos-item">
+        <div class="glos-term">Valor de Mercado <span class="glos-cat">básico</span></div>
+        <div class="glos-def">Cuánto valen hoy todos los activos si los vendieras al precio actual del mercado. Es el "valor real" del portafolio en este momento.</div>
+      </div>
+      <div class="glos-sep"></div>
+
+      <div class="glos-item">
+        <div class="glos-term">P&L (Profit & Loss) <span class="glos-cat">básico</span></div>
+        <div class="glos-def">Ganancia o pérdida. P&L del día = cuánto ganaste o perdiste <b>hoy</b> respecto a ayer. P&L acumulado = suma de todos los días del período. Verde = ganancia, rojo = pérdida.</div>
+      </div>
+      <div class="glos-sep"></div>
+
+      <div class="glos-item">
+        <div class="glos-term">Causación de Mercado <span class="glos-cat">rendimiento</span></div>
+        <div class="glos-def">Cuánto rindió el portafolio según los precios reales del mercado ese día. Incluye todos los efectos: tasas, precio de los bonos, tipo de cambio, etc. Es el número más completo del rendimiento diario.</div>
+      </div>
+      <div class="glos-sep"></div>
+
+      <div class="glos-item">
+        <div class="glos-term">Causación TIR <span class="glos-cat">rendimiento</span></div>
+        <div class="glos-def">Intereses "teóricos" que se devengan cada día según la tasa acordada en la compra del bono (TIR). Casi siempre es positivo porque los bonos generan intereses. No depende de lo que pase en el mercado.</div>
+      </div>
+      <div class="glos-sep"></div>
+
+      <div class="glos-item">
+        <div class="glos-term">Diferencia Mercado − TIR <span class="glos-cat">rendimiento</span></div>
+        <div class="glos-def">La diferencia entre lo que "dice el mercado" y lo "teórico". Si es muy negativo, significa que los precios de mercado bajaron más de lo que deberían según la tasa de compra. <b>Esta es la causa más común de días muy negativos.</b></div>
+      </div>
+      <div class="glos-sep"></div>
+
+      <div class="glos-item">
+        <div class="glos-term">Efecto FX (Causación Moneda) <span class="glos-cat">rendimiento</span></div>
+        <div class="glos-def">Ganancia o pérdida causada por el movimiento del dólar, euro u otras monedas. Si tienes activos en dólares y el dólar bajó contra el peso, esto genera una pérdida en pesos.</div>
+      </div>
+      <div class="glos-sep"></div>
+
+      <div class="glos-item">
+        <div class="glos-term">Efecto Tasa <span class="glos-cat">rendimiento</span></div>
+        <div class="glos-def">Impacto del movimiento de tasas de interés. Cuando suben las tasas, los bonos existentes pierden valor (relación inversa). Este componente captura esa pérdida o ganancia.</div>
+      </div>
+      <div class="glos-sep"></div>
+
+      <div class="glos-item">
+        <div class="glos-term">TIR (Tasa Interna de Retorno) <span class="glos-cat">instrumento</span></div>
+        <div class="glos-def">El rendimiento anual que ofrece un bono si lo mantienes hasta su vencimiento. Expresado en %. Una TIR de 12% significa que el bono rinde aproximadamente el 12% al año.</div>
+      </div>
+      <div class="glos-sep"></div>
+
+      <div class="glos-item">
+        <div class="glos-term">Valor Nominal <span class="glos-cat">instrumento</span></div>
+        <div class="glos-def">El valor "en papel" del activo, lo que se pagó originalmente o el valor facial del bono. Se diferencia del valor de mercado porque este último cambia con las tasas y el mercado.</div>
+      </div>
+      <div class="glos-sep"></div>
+
+      <div class="glos-item">
+        <div class="glos-term">Adeudados <span class="glos-cat">instrumento</span></div>
+        <div class="glos-def">Intereses causados que ya se ganaron pero todavía no se han pagado. Es dinero "en camino".</div>
+      </div>
+      <div class="glos-sep"></div>
+
+      <div class="glos-item">
+        <div class="glos-term">Drawdown máximo <span class="glos-cat">riesgo</span></div>
+        <div class="glos-def">La caída máxima del valor del portafolio desde un punto alto hasta el punto más bajo en el período. Ejemplo: 1.5% drawdown = en algún momento el portafolio cayó 1.5% desde su máximo.</div>
+      </div>
+      <div class="glos-sep"></div>
+
+      <div class="glos-item">
+        <div class="glos-term">Sharpe <span class="glos-cat">riesgo</span></div>
+        <div class="glos-def">Mide si el rendimiento vale el riesgo que se tomó. Mayor de 1 = excelente. Entre 0 y 1 = aceptable. Negativo = el riesgo no se está compensando con rendimiento.</div>
+      </div>
+      <div class="glos-sep"></div>
+
+      <div class="glos-item">
+        <div class="glos-term">Hit Rate <span class="glos-cat">riesgo</span></div>
+        <div class="glos-def">Porcentaje de días con ganancia. 60% hit rate = 6 de cada 10 días el portafolio ganó dinero. No mide cuánto se ganó o perdió, solo la frecuencia.</div>
+      </div>
+      <div class="glos-sep"></div>
+
+      <div class="glos-item">
+        <div class="glos-term">TES <span class="glos-cat">tipo de activo</span></div>
+        <div class="glos-def">Títulos de deuda del gobierno colombiano. Son los activos más seguros del portafolio local.</div>
+      </div>
+      <div class="glos-sep"></div>
+
+      <div class="glos-item">
+        <div class="glos-term">CDT <span class="glos-cat">tipo de activo</span></div>
+        <div class="glos-def">Certificado de Depósito a Término. Depósito en un banco por un plazo fijo con tasa garantizada.</div>
+      </div>
+      <div class="glos-sep"></div>
+
+      <div class="glos-item">
+        <div class="glos-term">AOR <span class="glos-cat">tipo de activo</span></div>
+        <div class="glos-def">Activos de Operación de Reporto. Préstamos de corto plazo donde un activo se vende con compromiso de recompra.</div>
+      </div>
+
+    </div>
   </div>
 </div>
 

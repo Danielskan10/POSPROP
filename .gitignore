@@ -6,6 +6,9 @@ __pycache__/
 .Python
 *.egg-info/
 
+# Token y variables de entorno locales — NUNCA subir
+.env
+
 # Caché incremental del procesador (solo local, nunca a GitHub)
 .cache_procesado.json
 

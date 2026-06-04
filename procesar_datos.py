@@ -17,27 +17,52 @@ import numpy as np
 warnings.filterwarnings("ignore")
 
 # ══════════════════════════════════════════════════════════════════
-#  ★  CONFIGURA ESTAS DOS COSAS — lo demás no lo toques
+#  ★  CONFIGURA ESTO EN CADA PC — nunca se sube a GitHub
 # ══════════════════════════════════════════════════════════════════
 
 # 1. Carpeta donde están tus archivos CSV/XLSX
-#    Puede ser cualquier ruta del PC. Ej: r"C:\Datos\Posiciones"
 CARPETA_DATOS = r"C:\Users\danie\Sapienza\POSPRO"
 
-# 2. Token de GitHub para subir los datos
-#    Crea uno en: https://github.com/settings/tokens
-#    Permisos necesarios: repo (full control)
-GITHUB_TOKEN = ""   # ← pegar tu token aquí
+# 2. Token de GitHub — 3 formas de configurarlo (en orden de prioridad):
+#    a) Variable de entorno: GITHUB_TOKEN=ghp_xxx  (más seguro)
+#    b) Archivo .env junto al script con la línea: GITHUB_TOKEN=ghp_xxx
+#    c) Directamente aquí (NUNCA dejar aquí al subir a GitHub)
+GITHUB_TOKEN  = ""    # ← solo si no usas .env ni variable de entorno
 
 # ══════════════════════════════════════════════════════════════════
-#  Repositorio de destino — cambiar si usas uno diferente
-GITHUB_REPO  = "Danielskan10/POSPROP"    # usuario/repositorio
+#  Repositorio — igual en todos los PCs, no cambiar
+GITHUB_REPO   = "Danielskan10/POSPROP"
 GITHUB_BRANCH = "main"
 # ══════════════════════════════════════════════════════════════════
 
 # Rutas internas (no tocar)
 _SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
 ROOT        = CARPETA_DATOS.strip() if CARPETA_DATOS.strip() else _SCRIPT_DIR
+
+# ── Carga del token: variable de entorno > .env > campo de arriba ──
+def _cargar_token():
+    tok = GITHUB_TOKEN.strip()
+    if tok:
+        return tok
+    # Variable de entorno
+    tok = os.environ.get("GITHUB_TOKEN", "").strip()
+    if tok:
+        return tok
+    # Archivo .env junto al script
+    env_path = os.path.join(_SCRIPT_DIR, ".env")
+    if os.path.exists(env_path):
+        with open(env_path, encoding="utf-8") as fenv:
+            for line in fenv:
+                line = line.strip()
+                if line.startswith("GITHUB_TOKEN"):
+                    parts = line.split("=", 1)
+                    if len(parts) == 2:
+                        tok = parts[1].strip().strip('"').strip("'")
+                        if tok:
+                            return tok
+    return ""
+
+GITHUB_TOKEN = _cargar_token()
 
 # ┌─────────────────────────────────────────────────────────────────┐
 # │  Lo demás no necesitas tocarlo                                   │
@@ -395,12 +420,34 @@ def _transformar(df, fecha):
 #  CARGA CON CACHÉ INCREMENTAL
 # ══════════════════════════════════════════════════════════════════
 
+def descargar_data_json_github():
+    """
+    Descarga data.json desde GitHub para saber qué fechas ya están publicadas.
+    Devuelve el dict con los datos, o None si no existe todavía.
+    """
+    import urllib.request, urllib.error, base64
+    repo = GITHUB_REPO.strip()
+    try:
+        info, _ = _github_api("GET", f"repos/{repo}/contents/data.json")
+        contenido = base64.b64decode(info["content"]).decode("utf-8")
+        return json.loads(contenido)
+    except RuntimeError as e:
+        if "404" in str(e):
+            return None   # aún no existe data.json en el repo
+        print(f"  [WARN] No se pudo descargar data.json de GitHub: {e}")
+        return None
+
+
 def cargar(cache: dict):
     """
-    Carga todos los XLSX.
-    - Si existe data.json previo: extrae fechas ya procesadas.
-    - Solo procesa archivos nuevos o modificados (hash distinto).
-    - Combina datos nuevos con datos previos del JSON.
+    Carga los XLSX locales, pero solo procesa fechas que NO están
+    ya publicadas en GitHub. Así varios PCs nunca duplican datos.
+
+    Flujo:
+    1. Descarga data.json de GitHub → fechas ya publicadas
+    2. Identifica XLSX locales cuya fecha NO está publicada
+    3. Procesa solo esos archivos nuevos
+    4. Combina con los datos que ya están en GitHub
     """
     ign = CFG["ignorar"]
     xlsxs = [p for p in
@@ -409,33 +456,51 @@ def cargar(cache: dict):
         if os.path.basename(p) not in ign
     ]
     xlsxs = list({os.path.normcase(p): p for p in xlsxs}.values())
+    print(f"  XLSX locales encontrados: {len(xlsxs)}")
 
-    # Separar archivos nuevos/modificados de los ya procesados
-    nuevos    = [p for p in xlsxs if not archivo_ya_procesado(p, cache)]
-    ya_ok     = [p for p in xlsxs if     archivo_ya_procesado(p, cache)]
+    # ── Descargar data.json de GitHub (fuente de verdad de fechas) ──
+    print(f"  Descargando fechas publicadas de GitHub...")
+    prev_json = descargar_data_json_github()
+    fechas_publicadas = set(prev_json.get("fechas", [])) if prev_json else set()
+    if fechas_publicadas:
+        print(f"  Fechas ya en GitHub: {len(fechas_publicadas)} "
+              f"({min(fechas_publicadas)} → {max(fechas_publicadas)})")
+    else:
+        print(f"  GitHub: sin datos previos (primera carga)")
 
-    print(f"XLSX encontrados: {len(xlsxs)}  "
-          f"({len(nuevos)} nuevos/modificados, {len(ya_ok)} en caché)")
+    # ── Identificar archivos con fechas nuevas ──────────────────────
+    # Un archivo es "nuevo" si:
+    #   a) Su fecha no está en GitHub, O
+    #   b) Su hash cambió (archivo modificado)
+    nuevos = []
+    saltados = []
+    for p in sorted(xlsxs):
+        fecha = _fecha_path(p)
+        fecha_str = str(fecha) if fecha else None
+        fecha_en_github = fecha_str and fecha_str in fechas_publicadas
+        hash_cambiado   = not archivo_ya_procesado(p, cache)
 
-    # Cargar datos previos del JSON si existe
+        if fecha_en_github and not hash_cambiado:
+            saltados.append(p)
+        else:
+            nuevos.append(p)
+
+    print(f"  Archivos a procesar: {len(nuevos)} nuevos, {len(saltados)} ya publicados")
+
+    # ── Reconstruir datos previos desde GitHub ─────────────────────
     datos_previos = pd.DataFrame()
-    json_path = CFG["output_json"]
-    if os.path.exists(json_path) and ya_ok:
-        try:
-            with open(json_path, encoding="utf-8") as f:
-                prev_json = json.load(f)
-            # Reconstruir DataFrame desde la tabla del JSON
-            filas = prev_json.get("_raw_tabla", [])
-            if filas:
-                datos_previos = pd.DataFrame(filas)
-                datos_previos["Fecha_Posicion"] = pd.to_datetime(
-                    datos_previos["Fecha_Posicion"]
-                )
-                print(f"  Datos previos cargados del JSON: "
-                      f"{len(datos_previos):,} filas | "
-                      f"{datos_previos['Fecha_Posicion'].nunique()} fechas")
-        except Exception as e:
-            print(f"  [WARN] No se pudo leer datos previos del JSON: {e}")
+    if prev_json:
+        filas = prev_json.get("_raw_tabla", [])
+        if filas:
+            datos_previos = pd.DataFrame(filas)
+            datos_previos["Fecha_Posicion"] = pd.to_datetime(datos_previos["Fecha_Posicion"])
+            print(f"  Datos en GitHub : {len(datos_previos):,} filas")
+
+    if not nuevos:
+        if not datos_previos.empty:
+            print(f"  Sin archivos nuevos — usando datos de GitHub.")
+            return datos_previos, False
+        return pd.DataFrame(), False
 
     # Procesar archivos nuevos
     todos_nuevos = []
