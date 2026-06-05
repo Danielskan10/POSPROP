@@ -1,31 +1,42 @@
-# Python
+# ── Datos de posiciones (NUNCA al repo) ──────────────────────
+02 February/
+03 March/
+04 April/
+05 May/
+06 June/
+07 July/
+08 August/
+09 September/
+10 October/
+11 November/
+12 December/
+*.CSV
+*.csv
+*.xlsx
+*.xls
+
+# ── Archivos de construcción y desarrollo ────────────────────
+_dashboard_tpl.html
+_build.py
+_clean_template.py
+procesar_datos.py
+
+# ── Secretos y caché local ───────────────────────────────────
+.env
+.cache_procesado.json
+*.log
+watcher.log
+posiciones_consolidadas.xlsx
+
+# ── Python ───────────────────────────────────────────────────
 __pycache__/
 *.pyc
 *.pyo
 *.pyd
-.Python
 *.egg-info/
 
-# Token y variables de entorno locales — NUNCA subir
-.env
-
-# Caché incremental del procesador (solo local, nunca a GitHub)
-.cache_procesado.json
-
-# Archivos locales que no se publican
-posiciones_consolidadas.xlsx
-watcher.log
-*.log
-
-# XLSX convertidos desde CSV (los CSV originales ya están en git)
-# Comentar esta línea si quieres subir los XLSX también
-02 February/*.xlsx
-*.xlsx
-!575 20260201.xlsx
-!575 20260202.xlsx
-!575 20260203.xlsx
-
-# Sistema operativo
+# ── Sistema operativo ────────────────────────────────────────
 .DS_Store
 Thumbs.db
 desktop.ini
+.claude/
