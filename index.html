@@ -936,10 +936,14 @@ tr.drill-row:hover td{background:rgba(0,133,74,.06)!important}
     </div>
     <div class="card">
       <div class="ct">Perfil de vencimientos por plazo</div>
-      <div style="font-size:10.5px;color:var(--tx2);margin-bottom:8px">
-        <span style="color:#ef4444">■</span> &lt;30d &nbsp;
-        <span style="color:#f59e0b">■</span> 30–90d &nbsp;
-        <span style="color:#3b82f6">■</span> &gt;90d
+      <div style="font-size:10.5px;color:var(--tx2);margin-bottom:8px;display:flex;gap:12px;flex-wrap:wrap">
+        <span><span style="color:rgba(220,38,38,.9)">■</span> &lt;30d</span>
+        <span><span style="color:rgba(217,119,6,.9)">■</span> 30–90d</span>
+        <span><span style="color:rgba(245,158,11,.9)">■</span> 90–180d</span>
+        <span><span style="color:rgba(37,99,235,.9)">■</span> 180d–1a</span>
+        <span><span style="color:rgba(124,58,237,.9)">■</span> 1–2a</span>
+        <span><span style="color:rgba(16,185,129,.9)">■</span> 2–5a</span>
+        <span><span style="color:rgba(6,182,212,.9)">■</span> &gt;5a</span>
       </div>
       <div class="ch h240"><canvas id="cVctoBucket"></canvas></div>
     </div>
@@ -1104,7 +1108,7 @@ tr.drill-row:hover td{background:rgba(0,133,74,.06)!important}
   <!-- Vencimientos próximos + TIR histórica -->
   <div class="g2">
     <div class="card">
-      <div class="ct">Próximos vencimientos (&lt;365 días)</div>
+      <div class="ct">Calendario de vencimientos — todos los plazos</div>
       <div class="ch h240"><canvas id="cVcto"></canvas></div>
     </div>
     <div class="card">

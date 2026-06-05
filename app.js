@@ -796,12 +796,26 @@ function _buildCrossTable(){
 }
 
 function _buildVctoBucket(){
-  const vb=D.extras?.vcto_buckets||{labels:[],valores:[],n:[]};
-  mkC('cVctoBucket',{type:'bar',data:{labels:vb.labels,datasets:[{
-    label:'Valor',data:vb.valores,
-    backgroundColor:vb.labels.map(l=>l.includes('<30')?'rgba(239,68,68,.8)':l.includes('30-')||l.includes('60-90')||l.includes('90-180')?'rgba(245,158,11,.75)':'rgba(59,130,246,.7)'),
+  // Recalcula buckets desde los datos en vivo para no depender del backend fijo
+  const rows=FD().filter(r=>r.dias_vcto>0);
+  const buckets=[
+    {label:'< 30d',  min:0,   max:30,   col:'rgba(220,38,38,.8)'},
+    {label:'30–90d', min:30,  max:90,   col:'rgba(217,119,6,.75)'},
+    {label:'90–180d',min:90,  max:180,  col:'rgba(245,158,11,.7)'},
+    {label:'180d–1a',min:180, max:365,  col:'rgba(37,99,235,.75)'},
+    {label:'1–2a',   min:365, max:730,  col:'rgba(124,58,237,.7)'},
+    {label:'2–5a',   min:730, max:1825, col:'rgba(16,185,129,.7)'},
+    {label:'> 5a',   min:1825,max:Infinity,col:'rgba(6,182,212,.65)'},
+  ];
+  const vals=buckets.map(b=>rows.filter(r=>r.dias_vcto>b.min&&r.dias_vcto<=b.max).reduce((a,r)=>a+(r.valor||0),0));
+  const ns  =buckets.map(b=>rows.filter(r=>r.dias_vcto>b.min&&r.dias_vcto<=b.max).length);
+  // Mostrar solo buckets con valor
+  const active=buckets.map((b,i)=>({...b,val:vals[i],n:ns[i]})).filter(b=>b.val>0);
+  mkC('cVctoBucket',{type:'bar',data:{labels:active.map(b=>b.label),datasets:[{
+    label:'Valor',data:active.map(b=>b.val),
+    backgroundColor:active.map(b=>b.col),
     borderRadius:5,borderSkipped:false,barPercentage:.7
-  }]},options:{...CHART_DEFAULTS,plugins:{legend:{display:false},tooltip:{...tipBI(),callbacks:{label:c=>`${fC(c.raw)}  (${vb.n[c.dataIndex]} posic.)`}}},scales:axO()}});
+  }]},options:{...CHART_DEFAULTS,plugins:{legend:{display:false},tooltip:{...tipBI(),callbacks:{label:c=>`${fC(c.raw)}  (${active[c.dataIndex].n} posic.)`}}},scales:axO()}});
 }
 
 function _compSortBy(k){
@@ -1207,16 +1221,17 @@ function initInstrumentos(){
     scales:{x:{ticks:{callback:v=>fmt(v),color:tx2(),font:{size:10.5}},grid:{color:gc(),drawBorder:false}},
             y:{ticks:{color:tx2(),font:{size:10.5}},grid:{display:false}}}}});
 
-  // Vencimientos próximos
-  const vctoRf=rf.filter(r=>r.dias_vcto>0&&r.dias_vcto<365).sort((a,b)=>a.dias_vcto-b.dias_vcto);
-  mkC('cVcto',{type:'bar',data:{labels:vctoRf.map(r=>r.vcto||r.esp.slice(0,12)),datasets:[{
+  // Vencimientos — todos los instrumentos con fecha, sin límite de días
+  const vctoRf=rf.filter(r=>r.dias_vcto>0).sort((a,b)=>a.dias_vcto-b.dias_vcto);
+  const vctoColor=d=>d<30?'rgba(220,38,38,.85)':d<90?'rgba(217,119,6,.8)':d<365?'rgba(37,99,235,.75)':d<730?'rgba(124,58,237,.7)':'rgba(16,185,129,.7)';
+  mkC('cVcto',{type:'bar',data:{labels:vctoRf.map(r=>r.vcto||r.esp.slice(0,14)),datasets:[{
     label:'Valor',data:vctoRf.map(r=>r.valor||0),
-    backgroundColor:vctoRf.map(r=>r.dias_vcto<30?'rgba(239,68,68,.85)':r.dias_vcto<90?'rgba(245,158,11,.8)':'rgba(59,130,246,.7)'),
+    backgroundColor:vctoRf.map(r=>vctoColor(r.dias_vcto)),
     borderRadius:5,borderSkipped:false,barPercentage:.75
   }]},options:{...CHART_DEFAULTS,plugins:{legend:{display:false},tooltip:{backgroundColor:tipBg(),borderColor:tipBd(),borderWidth:1,
     titleColor:tipTx(),bodyColor:tipTx2(),padding:10,cornerRadius:8,
-    callbacks:{title:c=>c[0].label,label:c=>['Valor: '+fC(c.raw)]}}},
-    scales:{x:{ticks:{color:tx2(),font:{size:9.5},maxRotation:45},grid:{display:false,drawBorder:false}},
+    callbacks:{title:c=>c[0].label,label:c=>{const r=vctoRf[c.dataIndex];return['Valor: '+fC(c.raw),'Días: '+(r?.dias_vcto||'—'),'TIR: '+(r?.tir>0.0001?fP(r.tir*100):'—')];}}}},
+    scales:{x:{ticks:{color:tx2(),font:{size:9.5},maxRotation:50,maxTicksLimit:20},grid:{display:false,drawBorder:false}},
             y:{ticks:{callback:v=>fmt(v),color:tx2(),font:{size:10.5}},grid:{color:gc(),drawBorder:false}}}}});
 
   // TIR histórica
