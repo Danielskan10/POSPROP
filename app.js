@@ -823,37 +823,155 @@ function _buildEATable(ev){
 }
 
 // ════════════════════════════════════════════════════════════
-// TAB ②  COMPOSICIÓN — Power BI style
-// La tabla maestra es la fuente de verdad; filtra las gráficas
+// TAB ②  COMPOSICIÓN
 // ════════════════════════════════════════════════════════════
 let _compSub = 'tipo';
 let _compChips = new Set();
-let _compSelRows = new Set(); // índices de filas seleccionadas en la tabla
+let _compSelRows = new Set();
 
 function setCS(btn){
   document.querySelectorAll('#compST .stab').forEach(b=>b.classList.remove('on'));
-  btn.classList.add('on'); _compSub=btn.dataset.c;
-  _compUpdateCharts(_compGetActiveRows());
+  btn.classList.add('on'); _compSub=btn.dataset.c; _renderComp();
 }
 
 function _compChip(btn){
   btn.classList.toggle('on');
   const k=btn.dataset.cf;
   if(_compChips.has(k)) _compChips.delete(k); else _compChips.add(k);
-  _compSelRows.clear();
   _compTableRender();
 }
 
 function _compClearSel(){
-  _compSelRows.clear();
   _compChips.clear();
   document.querySelectorAll('#pg-composicion .chip.on').forEach(b=>b.classList.remove('on'));
   const q=document.getElementById('compQ'); if(q) q.value='';
   _compTableRender();
 }
 
-// Devuelve las filas activas según chips + búsqueda + selección
-function _compGetActiveRows(){
+function _colorFor(sub,key,i){ return sub==='tipo'?(TC[key]||PA[i%PA.length]):PC[i%PC.length]; }
+
+function _renderComp(){
+  const rows=FD();
+  const cfgMap={
+    tipo:  {key:'tipo',  title:'Composición por Tipo de Activo',colLabel:'Tipo'},
+    port:  {key:'port',  title:'Composición por Portafolio',    colLabel:'Portafolio'},
+    moneda:{key:'moneda',title:'Composición por Moneda',        colLabel:'Moneda'},
+    vcto:  {key:null,    title:'Composición por Vencimiento',   colLabel:'Plazo'},
+  };
+  const cfg=cfgMap[_compSub]||cfgMap.tipo;
+  let sorted;
+  if(_compSub==='vcto'){
+    const bk={'<30d':0,'30-90d':0,'90-180d':0,'180d-1a':0,'1a-2a':0,'>2a':0,'Sin vcto':0};
+    const meta=Object.fromEntries(Object.keys(bk).map(k=>[k,0]));
+    rows.forEach(r=>{const d=r.dias_vcto;let k='Sin vcto';
+      if(d>0&&d<=30)k='<30d';else if(d>30&&d<=90)k='30-90d';
+      else if(d>90&&d<=180)k='90-180d';else if(d>180&&d<=365)k='180d-1a';
+      else if(d>365&&d<=730)k='1a-2a';else if(d>730)k='>2a';
+      bk[k]+=(r.valor||0);meta[k]++;});
+    sorted=Object.entries(bk).filter(([,v])=>v>0).map(([k,v])=>[k,{total:v,pl:0,cmer:0,ctir:0,cmon:0,ctasa:0,n:meta[k]}]);
+  } else {
+    const byK={};
+    rows.forEach(r=>{const k=r[cfg.key]||'—';
+      if(!byK[k])byK[k]={total:0,pl:0,cmer:0,ctir:0,cmon:0,ctasa:0,n:0};
+      const b=byK[k];b.total+=(r.valor||0);b.pl+=(r.pl||0);b.cmer+=(r.caus_mer||0);
+      b.ctir+=(r.caus_tir||0);b.cmon+=(r.caus_mon||0);b.ctasa+=(r.caus_tasa||0);b.n++;});
+    sorted=Object.entries(byK).sort((a,b)=>b[1].total-a[1].total);
+  }
+  const ttl=sorted.reduce((a,[,v])=>a+v.total,0);
+  const labels=sorted.map(([k])=>k);
+  const colors=sorted.map(([k],i)=>_colorFor(_compSub,k,i));
+
+  document.getElementById('compDonutTitle').textContent=cfg.title;
+  document.getElementById('compDonutVal').textContent=fmt(ttl);
+  document.getElementById('compBarTitle').textContent='Valor por '+cfg.colLabel.toLowerCase();
+  document.getElementById('compTableTitle').textContent='Detalle por '+cfg.colLabel.toLowerCase();
+
+  mkC('cCompDonut',{type:'doughnut',data:{labels,datasets:[{
+    data:sorted.map(([,b])=>b.total),backgroundColor:colors,
+    borderColor:'transparent',hoverOffset:8,borderRadius:4,spacing:2
+  }]},options:{...CHART_DEFAULTS,cutout:'70%',plugins:{legend:{display:false},
+    tooltip:{...tipFull(),callbacks:{label:c=>`${c.label}: ${fmt(c.raw)} (${ttl?(c.raw/ttl*100).toFixed(1):0}%)`}}}}});
+
+  mkC('cCompBar',{type:'bar',data:{
+    labels:labels.map(l=>l.length>22?l.slice(0,22)+'…':l),
+    datasets:[{label:'Valor',data:sorted.map(([,b])=>b.total),
+      backgroundColor:colors.map(c=>c+'cc'),borderColor:colors,borderWidth:1,borderRadius:5,borderSkipped:false}]
+  },options:{...CHART_DEFAULTS,indexAxis:'y',plugins:{legend:{display:false},tooltip:{...tipFull(),callbacks:{label:c=>fC(c.raw)}}},
+    scales:{x:{ticks:{callback:v=>fmt(v),color:tx2(),font:{size:10.5}},grid:{color:gc(),drawBorder:false}},
+            y:{ticks:{color:tx2(),font:{size:10.5}},grid:{display:false}}}}});
+
+  // Tabla resumen agrupado
+  const drillKey={tipo:'tipo',port:'port',moneda:'moneda',vcto:null}[_compSub];
+  const hasExtras=_compSub!=='vcto';
+  const _cst=S.tableSort?.compTable||{k:'total',d:-1};
+  const _icon=k=>_cst.k===k?(_cst.d>0?' ▲':' ▼'):'';
+  const _cs=k=>'onclick="_compSortBy(\''+k+'\')"';
+  let thead='<th '+_cs('label')+'>'+cfg.colLabel+_icon('label')+'</th>';
+  thead+='<th class="r" '+_cs('total')+'>Valor'+_icon('total')+'</th>';
+  thead+='<th class="r" '+_cs('pct')+'>%'+_icon('pct')+'</th>';
+  if(hasExtras){thead+='<th class="r" '+_cs('pl')+'>P&L'+_icon('pl')+'</th>';
+    thead+='<th class="r" '+_cs('cmer')+'>Caus.Mer'+_icon('cmer')+'</th>';
+    thead+='<th class="r" '+_cs('cmon')+'>FX'+_icon('cmon')+'</th>';}
+  thead+='<th class="r" '+_cs('n')+'>#'+_icon('n')+'</th>';
+  if(drillKey) thead+='<th></th>';
+  document.getElementById('compTableHead').innerHTML=thead;
+
+  const rowData=sorted.map(([k,b],i)=>({label:k,total:b.total,pl:b.pl,cmer:b.cmer,cmon:b.cmon,n:b.n,pct:ttl?b.total/ttl*100:0,col:colors[i]}));
+  const sortedRows=[...rowData].sort((a,b2)=>{const av=a[_cst.k],bv=b2[_cst.k];
+    if(av==null&&bv==null)return 0;if(av==null)return 1;if(bv==null)return -1;
+    if(typeof av==='string')return av.localeCompare(bv)*_cst.d;return(av-bv)*_cst.d;});
+  let tbody='';
+  sortedRows.forEach(r=>{
+    tbody+='<tr'+(drillKey?' class="drill-row" onclick="drillDown(\'comp-drill-'+_compSub+'\',\''+drillKey+'\',\''+escAttr(r.label)+'\',\''+escAttr(cfg.colLabel)+'\')"':'')+' title="'+(drillKey?'Click para ver instrumentos':'')+'">';
+    tbody+='<td><span style="display:inline-block;width:8px;height:8px;border-radius:50%;background:'+r.col+';margin-right:5px"></span>'+escHtml(r.label)+'</td>';
+    tbody+='<td class="r">'+fC(r.total)+'</td><td class="r">'+fP(r.pct)+'</td>';
+    if(hasExtras){tbody+='<td class="'+clr(r.pl)+'">'+sgn(r.pl)+fC(r.pl)+'</td>';
+      tbody+='<td class="'+clr(r.cmer)+'">'+fC(r.cmer)+'</td>';
+      tbody+='<td class="'+clr(r.cmon)+'">'+fC(r.cmon)+'</td>';}
+    tbody+='<td class="r">'+r.n+'</td>';
+    if(drillKey)tbody+='<td style="color:var(--tx3);font-size:10px">▼</td>';
+    tbody+='</tr>';});
+  document.getElementById('compTableBody').innerHTML=tbody;
+  const sumPl=rowData.reduce((a,r)=>a+r.pl,0);
+  const sumCmer=rowData.reduce((a,r)=>a+r.cmer,0);
+  const sumCmon=rowData.reduce((a,r)=>a+r.cmon,0);
+  let tfoot='<td>TOTAL</td><td class="r">'+fC(ttl)+'</td><td class="r">100%</td>';
+  if(hasExtras){tfoot+='<td class="'+clr(sumPl)+'">'+sgn(sumPl)+fC(sumPl)+'</td>';
+    tfoot+='<td class="'+clr(sumCmer)+'">'+fC(sumCmer)+'</td>';
+    tfoot+='<td class="'+clr(sumCmon)+'">'+fC(sumCmon)+'</td>';}
+  tfoot+='<td class="r">'+rows.length+'</td>';
+  if(drillKey)tfoot+='<td></td>';
+  document.getElementById('compTableFoot').innerHTML=tfoot;
+
+  // Buckets
+  const buckets=[
+    {label:'< 30d',min:0,max:30,col:'rgba(220,38,38,.8)'},
+    {label:'30–90d',min:30,max:90,col:'rgba(217,119,6,.75)'},
+    {label:'90–180d',min:90,max:180,col:'rgba(245,158,11,.7)'},
+    {label:'180d–1a',min:180,max:365,col:'rgba(37,99,235,.75)'},
+    {label:'1–2a',min:365,max:730,col:'rgba(124,58,237,.7)'},
+    {label:'2–5a',min:730,max:1825,col:'rgba(16,185,129,.7)'},
+    {label:'> 5a',min:1825,max:Infinity,col:'rgba(6,182,212,.65)'},
+  ];
+  const bRows=rows.filter(r=>r.dias_vcto>0);
+  const bAct=buckets.map(b=>({...b,val:bRows.filter(r=>r.dias_vcto>b.min&&r.dias_vcto<=b.max).reduce((a,r)=>a+(r.valor||0),0),n:bRows.filter(r=>r.dias_vcto>b.min&&r.dias_vcto<=b.max).length})).filter(b=>b.val>0);
+  mkC('cVctoBucket',{type:'bar',data:{labels:bAct.map(b=>b.label),datasets:[{
+    label:'Valor',data:bAct.map(b=>b.val),backgroundColor:bAct.map(b=>b.col),borderRadius:5,borderSkipped:false,barPercentage:.7
+  }]},options:{...CHART_DEFAULTS,plugins:{legend:{display:false},tooltip:{...tipBI(),callbacks:{label:c=>`${fC(c.raw)} · ${bAct[c.dataIndex].n} posic.`}}},scales:axO()}});
+
+  _buildCrossTable();
+  _compTableRender();
+}
+
+function _compSortBy(k){
+  if(!S.tableSort)S.tableSort={};
+  const st=S.tableSort.compTable||(S.tableSort.compTable={k:'total',d:-1});
+  if(st.k===k)st.d*=-1;else{st.k=k;st.d=-1;}
+  S.tableSort.compTable=st; _renderComp();
+}
+
+// Tabla detalle de posiciones individuales (abajo de las gráficas)
+function _compTableRender(){
   let rows=FD();
   const q=(document.getElementById('compQ')?.value||'').toLowerCase();
   if(q) rows=rows.filter(r=>(r.esp||'').toLowerCase().includes(q)||(r.isin||'').toLowerCase().includes(q)||(r.port||'').toLowerCase().includes(q));
@@ -863,187 +981,25 @@ function _compGetActiveRows(){
   if(_compChips.has('vcto90')) rows=rows.filter(r=>r.dias_vcto>0&&r.dias_vcto<=90);
   if(_compChips.has('ext'))    rows=rows.filter(r=>r.ext);
   if(_compChips.has('neg'))    rows=rows.filter(r=>(r.pl||0)<0);
-  if(_compChips.has('top10'))  rows=[...rows].sort((a,b)=>(b.valor||0)-(a.valor||0)).slice(0,10);
-  // Si hay filas seleccionadas en la tabla, filtrar por ellas
-  if(_compSelRows.size>0) rows=rows.filter((_,i)=>_compSelRows.has(i));
-  return rows;
-}
-
-// Actualiza gráficas con el subconjunto de filas dado
-function _compUpdateCharts(rows){
-  const ttlTotal=FD().reduce((a,r)=>a+(r.valor||0),0);
-  const ttl=rows.reduce((a,r)=>a+(r.valor||0),0);
-
-  // KPIs de selección
-  const pl=rows.reduce((a,r)=>a+(r.pl||0),0);
-  const cmer=rows.reduce((a,r)=>a+(r.caus_mer||0),0);
-  const ctir=rows.reduce((a,r)=>a+(r.caus_tir||0),0);
-  const cmon=rows.reduce((a,r)=>a+(r.caus_mon||0),0);
-  const kpiEl=document.getElementById('compKpis');
-  if(kpiEl) kpiEl.innerHTML=
-    kH('Valor selección',fC(ttl),null,null,'#00854A',`${fP(ttlTotal?ttl/ttlTotal*100:0)} del total`)+
-    kH('P&L del día',fC(pl),null,pl,'#00854A',rows.length+' posiciones')+
-    kH('Caus. Mercado',fC(cmer),null,cmer,'#3b82f6','Devengado precio')+
-    kH('Caus. TIR',fC(ctir),null,ctir,'#3b82f6','Devengado TIR')+
-    kH('Caus. FX',fC(cmon),null,cmon,'#f97316','Efecto cambio');
-
-  // Agrupar por el sub activo
-  const grpKey={tipo:'tipo',port:'port',moneda:'moneda'}[_compSub]||'tipo';
-  const byK={};
-  rows.forEach(r=>{
-    const k=r[grpKey]||'Otro';
-    if(!byK[k]) byK[k]={total:0,pl:0,n:0};
-    byK[k].total+=(r.valor||0); byK[k].pl+=(r.pl||0); byK[k].n++;
-  });
-  const sorted=Object.entries(byK).sort((a,b)=>b[1].total-a[1].total);
-  const labels=sorted.map(([k])=>k);
-  const colors=sorted.map(([k],i)=>grpKey==='tipo'?(TC[k]||PA[i%PA.length]):PC[i%PA.length]);
-  const vals=sorted.map(([,v])=>v.total);
-
-  // Donut
-  document.getElementById('compDonutVal').textContent=fmt(ttl);
-  document.getElementById('compDonutLbl').textContent=_compSelRows.size||_compChips.size?'filtrado':'total';
-  const titMap={tipo:'Por Tipo',port:'Por Portafolio',moneda:'Por Moneda'};
-  document.getElementById('compDonutTitle').textContent=titMap[_compSub]||'Por Tipo';
-  mkC('cCompDonut',{type:'doughnut',data:{labels,datasets:[{
-    data:vals,backgroundColor:colors,borderColor:'transparent',hoverOffset:6,borderRadius:3,spacing:2
-  }]},options:{...CHART_DEFAULTS,cutout:'72%',
-    onClick:(e,els)=>{ if(els.length){ const lbl=labels[els[0].index]; _compFilterByGroup(grpKey,lbl); } },
-    plugins:{legend:{display:false},
-      tooltip:{...tipFull(),callbacks:{label:c=>`${c.label}: ${fmt(c.raw)} · ${ttl?(c.raw/ttl*100).toFixed(1):0}%`}}}}});
-
-  // Leyenda inline del donut
-  const legEl=document.getElementById('compDonutLegend');
-  if(legEl) legEl.innerHTML=sorted.slice(0,8).map(([k,v],i)=>{
-    const pct=ttl?(v.total/ttl*100).toFixed(1):0;
-    return `<div style="display:flex;align-items:center;gap:6px;font-size:10.5px;cursor:pointer" onclick="_compFilterByGroup('${grpKey}','${escAttr(k)}')">
-      <div style="width:9px;height:9px;border-radius:50%;background:${colors[i]};flex-shrink:0"></div>
-      <div style="flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;color:var(--tx2)" title="${escAttr(k)}">${escHtml(k)}</div>
-      <div style="font-weight:700;font-family:var(--mono);color:var(--tx);flex-shrink:0">${pct}%</div>
-    </div>`;
-  }).join('');
-
-  // Barras horizontales — click filtra
-  document.getElementById('compBarTitle').textContent='Valor por '+({tipo:'tipo',port:'portafolio',moneda:'moneda'}[_compSub]||'tipo');
-  mkC('cCompBar',{type:'bar',data:{
-    labels:labels.map(l=>l.length>20?l.slice(0,20)+'…':l),
-    datasets:[{label:'Valor',data:vals,
-      backgroundColor:colors.map(c=>c+'cc'),borderColor:colors,borderWidth:1.5,
-      borderRadius:5,borderSkipped:false}]
-  },options:{...CHART_DEFAULTS,indexAxis:'y',
-    onClick:(e,els)=>{ if(els.length) _compFilterByGroup(grpKey,labels[els[0].index]); },
-    plugins:{legend:{display:false},tooltip:{...tipFull(),callbacks:{label:c=>`${fC(c.raw)} · ${ttl?(c.raw/ttl*100).toFixed(1):0}%`}}},
-    scales:{x:{ticks:{callback:v=>fmt(v),color:tx2(),font:{size:10.5}},grid:{color:gc(),drawBorder:false}},
-            y:{ticks:{color:tx2(),font:{size:10.5}},grid:{display:false}}}}});
-
-  // Buckets de vencimiento con el subconjunto activo
-  const buckets=[
-    {label:'<30d',  min:0,   max:30,   col:'rgba(220,38,38,.8)'},
-    {label:'30-90d',min:30,  max:90,   col:'rgba(217,119,6,.75)'},
-    {label:'90-180d',min:90, max:180,  col:'rgba(245,158,11,.7)'},
-    {label:'180d-1a',min:180,max:365,  col:'rgba(37,99,235,.75)'},
-    {label:'1-2a',  min:365, max:730,  col:'rgba(124,58,237,.7)'},
-    {label:'2-5a',  min:730, max:1825, col:'rgba(16,185,129,.7)'},
-    {label:'>5a',   min:1825,max:Infinity,col:'rgba(6,182,212,.65)'},
-  ];
-  const bVals=buckets.map(b=>rows.filter(r=>r.dias_vcto>b.min&&r.dias_vcto<=b.max).reduce((a,r)=>a+(r.valor||0),0));
-  const bNs  =buckets.map(b=>rows.filter(r=>r.dias_vcto>b.min&&r.dias_vcto<=b.max).length);
-  const bAct =buckets.map((b,i)=>({...b,val:bVals[i],n:bNs[i]})).filter(b=>b.val>0);
-  mkC('cVctoBucket',{type:'bar',data:{labels:bAct.map(b=>b.label),datasets:[{
-    label:'Valor',data:bAct.map(b=>b.val),backgroundColor:bAct.map(b=>b.col),
-    borderRadius:5,borderSkipped:false,barPercentage:.7
-  }]},options:{...CHART_DEFAULTS,plugins:{legend:{display:false},
-    tooltip:{...tipBI(),callbacks:{label:c=>`${fC(c.raw)} · ${bAct[c.dataIndex].n} posic.`}}},scales:axO()}});
-
-  // Cross tabla
-  _buildCrossTable(rows);
-}
-
-// Filtra la tabla por grupo al hacer click en gráfica
-function _compFilterByGroup(key, val){
-  _compChips.clear();
-  document.querySelectorAll('#pg-composicion .chip.on').forEach(b=>b.classList.remove('on'));
-  // Seleccionar en la tabla las filas que matchean
-  const allRows=FD();
-  _compSelRows.clear();
-  allRows.forEach((r,i)=>{ if((r[key]||'Otro')===val) _compSelRows.add(i); });
-  _compTableRender();
-}
-
-function _compTableRender(){
-  const allRows=FD();
-  const q=(document.getElementById('compQ')?.value||'').toLowerCase();
-  const grp=document.getElementById('compGrp')?.value||'';
-
-  // Filtrar por chips + búsqueda (sin considerar selección para mostrar todas las filas)
-  let filtered=[...allRows];
-  if(q) filtered=filtered.filter(r=>(r.esp||'').toLowerCase().includes(q)||(r.isin||'').toLowerCase().includes(q)||(r.port||'').toLowerCase().includes(q));
-  if(_compChips.has('rf'))     filtered=filtered.filter(r=>['TES','TIDIS','CDT','Titularizaciones'].includes(r.tipo));
-  if(_compChips.has('fondos')) filtered=filtered.filter(r=>r.tipo==='Fondos');
-  if(_compChips.has('liq'))    filtered=filtered.filter(r=>r.tipo==='Liquidez');
-  if(_compChips.has('vcto90')) filtered=filtered.filter(r=>r.dias_vcto>0&&r.dias_vcto<=90);
-  if(_compChips.has('ext'))    filtered=filtered.filter(r=>r.ext);
-  if(_compChips.has('neg'))    filtered=filtered.filter(r=>(r.pl||0)<0);
-  if(_compChips.has('top10'))  filtered=[...filtered].sort((a,b)=>(b.valor||0)-(a.valor||0)).slice(0,10);
-
-  // Ordenar
   const st=_mkTableSort('compMaster'); if(!st.k) st.k='valor';
-  filtered=_sortRows(filtered,st,'valor');
-
-  // Marcar índices seleccionados en el set original (para cruce con gráficas)
-  const ttlAll=allRows.reduce((a,r)=>a+(r.valor||0),0);
-  const selRows=_compSelRows.size>0 ? filtered.filter((_,i)=>_compSelRows.has(allRows.indexOf(filtered[i]))) : filtered;
-
-  // Construir cabecera
+  rows=_sortRows(rows,st,'valor');
+  const ttlAll=FD().reduce((a,r)=>a+(r.valor||0),0);
   const H=(lbl,col,cls='')=>_thSort(lbl,'compMaster',col,cls);
   const headHtml=`<tr>
-    <th style="width:20px;padding:9px 6px 9px 14px"><input type="checkbox" id="compChkAll" onchange="_compToggleAll(this)" style="cursor:pointer"></th>
-    ${H('Especie','esp')} ${H('Portafolio','port')} ${H('Tipo','tipo')} ${H('Moneda','moneda','r')}
+    ${H('Especie','esp')} ${H('Portafolio','port')} ${H('Tipo','tipo')} ${H('Moneda','moneda','')}
     ${H('Nominal','nominal','r')} ${H('Valor Mercado','valor','r')} ${H('% Total','pct','r')}
-    ${H('P&L Día','pl','r')} ${H('Caus. Mer','caus_mer','r')} ${H('Caus. TIR','caus_tir','r')}
+    ${H('P&L','pl','r')} ${H('Caus. Mer','caus_mer','r')} ${H('Caus. TIR','caus_tir','r')}
     ${H('Caus. FX','caus_mon','r')} ${H('Caus. Tasa','caus_tasa','r')}
     ${H('TIR%','tir','r')} ${H('Precio','precio','r')} ${H('Adeudados','adeudados','r')}
     ${H('Vencimiento','vcto','')} ${H('Días','dias_vcto','r')} ${H('ISIN','isin','')} ${H('Estado','est','')}
   </tr>`;
-
-  // Construir body
   let bodyHtml='';
-  const grpMap={};
-
-  filtered.forEach((r,localIdx)=>{
-    const origIdx=allRows.indexOf(r);
-    const isSel=_compSelRows.size===0||_compSelRows.has(origIdx);
+  rows.forEach(r=>{
     const dv=r.dias_vcto;
-    const dvStyle=dv>0&&dv<=30?'color:var(--r);font-weight:700':dv>0&&dv<=90?'color:var(--y);font-weight:600':'';
-    const rowStyle=isSel?'':'opacity:.45';
-    const selStyle=_compSelRows.has(origIdx)?'background:rgba(0,133,74,.06)':'';
+    const dvS=dv>0&&dv<=30?'color:var(--r);font-weight:700':dv>0&&dv<=90?'color:var(--y);font-weight:600':'';
     const pct=ttlAll?(r.valor||0)/ttlAll*100:0;
-
-    // Si hay agrupación, insertar fila de grupo
-    if(grp && r[grp]){
-      const gKey=r[grp];
-      if(!grpMap[gKey]){
-        grpMap[gKey]=true;
-        const gRows=filtered.filter(rr=>rr[grp]===gKey);
-        const gTotal=gRows.reduce((a,rr)=>a+(rr.valor||0),0);
-        const gPl=gRows.reduce((a,rr)=>a+(rr.pl||0),0);
-        bodyHtml+=`<tr style="background:var(--s2);font-weight:700">
-          <td></td>
-          <td colspan="5" style="padding:7px 14px;font-size:11px;text-transform:uppercase;letter-spacing:.5px">
-            <span style="display:inline-block;width:8px;height:8px;border-radius:50%;background:${grp==='tipo'?(TC[gKey]||'#888'):'var(--g)'};margin-right:6px"></span>
-            ${escHtml(gKey)} — ${gRows.length} posiciones
-          </td>
-          <td class="r" style="padding:7px 14px">${fC(gTotal)}</td>
-          <td class="r" style="padding:7px 14px">${fP(ttlAll?gTotal/ttlAll*100:0)}</td>
-          <td class="${clr(gPl)}" style="padding:7px 14px">${sgn(gPl)+fC(gPl)}</td>
-          <td colspan="10"></td>
-        </tr>`;
-      }
-    }
-
-    bodyHtml+=`<tr style="${rowStyle};${selStyle};cursor:pointer" onclick="_compToggleRow(${origIdx},event)">
-      <td style="padding:8px 6px 8px 14px"><input type="checkbox" ${_compSelRows.has(origIdx)?'checked':''} onchange="_compToggleRow(${origIdx},event)" style="cursor:pointer" onclick="event.stopPropagation()"></td>
-      <td class="main" title="${escAttr(r.esp)}" style="max-width:200px">${r.esp.length>32?r.esp.slice(0,32)+'…':escHtml(r.esp)}</td>
+    bodyHtml+=`<tr>
+      <td class="main" title="${escAttr(r.esp)}">${r.esp.length>32?r.esp.slice(0,32)+'…':escHtml(r.esp)}</td>
       <td style="white-space:nowrap">${escHtml(r.port||'—')}</td>
       <td>${bdg(r.tipo)}</td>
       <td class="mono" style="font-size:10.5px">${escHtml(r.moneda||'—')}</td>
@@ -1058,71 +1014,40 @@ function _compTableRender(){
       <td class="r" style="color:var(--b)">${r.tir>0.0001?fP(r.tir*100):'—'}</td>
       <td class="r mono" style="font-size:10.5px">${r.precio!=null?r.precio.toFixed(4):'—'}</td>
       <td class="r">${fC(r.adeudados)}</td>
-      <td style="font-size:11px;${dvStyle};white-space:nowrap">${r.vcto||'—'}</td>
-      <td class="r" style="${dvStyle}">${dv>0?dv:'—'}</td>
+      <td style="font-size:11px;${dvS};white-space:nowrap">${r.vcto||'—'}</td>
+      <td class="r" style="${dvS}">${dv>0?dv:'—'}</td>
       <td class="mono" style="font-size:10.5px;color:var(--tx2)">${escHtml(r.isin||'—')}</td>
       <td>${estC(r.est)}</td>
     </tr>`;
   });
-
-  // Tfoot
-  const activePl=selRows.reduce((a,r)=>a+(r.pl||0),0);
-  const activeTotal=selRows.reduce((a,r)=>a+(r.valor||0),0);
+  const ttl=rows.reduce((a,r)=>a+(r.valor||0),0);
+  const sumPl=rows.reduce((a,r)=>a+(r.pl||0),0);
   const footHtml=`<tr>
-    <td></td>
-    <td colspan="5" style="padding:9px 14px;font-weight:700">TOTAL (${filtered.length} posiciones)</td>
-    <td class="r" style="font-weight:700;font-family:var(--mono)">${fC(activeTotal)}</td>
-    <td class="r">${fP(ttlAll?activeTotal/ttlAll*100:0)}</td>
-    <td class="${clr(activePl)}" style="font-weight:700">${sgn(activePl)+fC(activePl)}</td>
-    <td colspan="10"></td>
+    <td colspan="5" style="font-weight:700">TOTAL (${rows.length})</td>
+    <td class="r" style="font-weight:700;font-family:var(--mono)">${fC(ttl)}</td>
+    <td class="r">${fP(ttlAll?ttl/ttlAll*100:0)}</td>
+    <td class="${clr(sumPl)}" style="font-weight:700">${sgn(sumPl)+fC(sumPl)}</td>
+    <td colspan="11"></td>
   </tr>`;
-
-  const headEl=document.getElementById('compMasterHead');
-  const bodyEl=document.getElementById('compMasterBody');
-  const footEl=document.getElementById('compMasterFoot');
-  if(headEl) headEl.innerHTML=headHtml;
-  if(bodyEl) bodyEl.innerHTML=bodyHtml;
-  if(footEl) footEl.innerHTML=footHtml;
-
-  // Footer stats
-  const nSel=_compSelRows.size;
-  document.getElementById('compMasterCnt').textContent=filtered.length+' posiciones';
-  document.getElementById('compSelInfo').textContent=nSel>0?nSel+' seleccionadas':'';
-  document.getElementById('compMasterTotal').textContent=fC(activeTotal);
+  const hEl=document.getElementById('compMasterHead');
+  const bEl=document.getElementById('compMasterBody');
+  const fEl=document.getElementById('compMasterFoot');
+  if(hEl) hEl.innerHTML=headHtml;
+  if(bEl) bEl.innerHTML=bodyHtml;
+  if(fEl) fEl.innerHTML=footHtml;
+  const cntEl=document.getElementById('compMasterCnt');
+  if(cntEl) cntEl.textContent=rows.length+' posiciones';
+  const totEl=document.getElementById('compMasterTotal');
+  if(totEl) totEl.textContent=fC(ttl);
   const plEl=document.getElementById('compMasterPL');
-  if(plEl){plEl.textContent=sgn(activePl)+fC(activePl);plEl.style.color=activePl>=0?'var(--g)':'var(--r)';}
-  document.getElementById('compMasterPct').textContent=fP(ttlAll?activeTotal/ttlAll*100:0);
-
-  // Actualizar gráficas con el subconjunto activo
-  _compUpdateCharts(selRows);
+  if(plEl){plEl.textContent=sgn(sumPl)+fC(sumPl);plEl.style.color=sumPl>=0?'var(--g)':'var(--r)';}
 }
 
-function _compToggleRow(origIdx, e){
-  if(e) e.stopPropagation();
-  if(_compSelRows.has(origIdx)) _compSelRows.delete(origIdx);
-  else _compSelRows.add(origIdx);
-  _compTableRender();
-}
+function initComposicion(){ _compSub='tipo'; _compChips.clear(); _renderComp(); }
 
-function _compToggleAll(chk){
-  const allRows=FD();
-  if(chk.checked){ allRows.forEach((_,i)=>_compSelRows.add(i)); }
-  else _compSelRows.clear();
-  _compTableRender();
-}
-
-function _compSortBy(k){
-  if(!S.tableSort)S.tableSort={};
-  const st=S.tableSort.compTable||(S.tableSort.compTable={k:'total',d:-1});
-  if(st.k===k) st.d*=-1; else{st.k=k;st.d=-1;}
-  S.tableSort.compTable=st;
-  _compTableRender();
-}
-function initComposicion(){ _compSub='tipo'; _compSelRows.clear(); _compChips.clear(); _compTableRender(); }
-
-function _buildCrossTable(rowsOverride){
-  const rows=rowsOverride||FD();
-  // Calcular cross desde las rows activas (respeta selección)
+function _buildCrossTable(){
+  const rows=FD();
+  // Calcular cross desde las rows activas
   const live={};
   rows.forEach(r=>{
     const p=r.port||'—'; const t=r.tipo||'Otro';
@@ -1152,14 +1077,6 @@ function _buildCrossTable(rowsOverride){
 }
 
 
-function _compSortBy(k){
-  if(!S.tableSort)S.tableSort={};
-  const st=S.tableSort.compTable||(S.tableSort.compTable={k:'total',d:-1});
-  if(st.k===k) st.d*=-1; else{st.k=k;st.d=-1;}
-  S.tableSort.compTable=st;
-  _renderComp();
-}
-function initComposicion(){ _compSub='tipo'; _renderComp(); }
 
 // ════════════════════════════════════════════════════════════
 // TAB ③  EVOLUCIÓN

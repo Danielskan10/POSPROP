@@ -901,60 +901,76 @@ tr.drill-row:hover td{background:rgba(0,133,74,.06)!important}
 ══════════════════════════════════════════════════════════════ -->
 <div id="pg-composicion" class="page">
 
-  <!-- ── FILA SUPERIOR: KPIs selección activa ─────────────────── -->
-  <div id="compKpis" class="g5" style="margin-bottom:4px"></div>
-
-  <!-- ── FILA GRÁFICAS: Donut + Barras + Bucket vencimientos ──── -->
-  <div style="display:grid;grid-template-columns:220px 1fr 1fr;gap:16px;align-items:start">
-
-    <!-- Donut -->
-    <div class="card" style="padding:16px;display:flex;flex-direction:column;align-items:center">
-      <div style="display:flex;align-items:center;justify-content:space-between;width:100%;margin-bottom:10px">
-        <div class="ct" id="compDonutTitle" style="margin:0;font-size:10px">Por Tipo</div>
-        <div class="stabs" id="compST" style="padding:2px">
-          <button class="stab on" data-c="tipo"   onclick="setCS(this)" style="padding:3px 8px;font-size:10px">Tipo</button>
-          <button class="stab"    data-c="port"   onclick="setCS(this)" style="padding:3px 8px;font-size:10px">Port.</button>
-          <button class="stab"    data-c="moneda" onclick="setCS(this)" style="padding:3px 8px;font-size:10px">Mon.</button>
-        </div>
-      </div>
-      <div class="donut-ch" style="width:180px;height:180px;position:relative">
-        <canvas id="cCompDonut"></canvas>
-        <div class="donut-center">
-          <div class="dcv" id="compDonutVal" style="font-size:14px">—</div>
-          <div class="dcl" id="compDonutLbl" style="font-size:9px">selección</div>
-        </div>
-      </div>
-      <div id="compDonutLegend" style="width:100%;margin-top:10px;display:flex;flex-direction:column;gap:4px"></div>
+  <!-- Sub-tabs -->
+  <div style="display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:10px">
+    <div class="stabs" id="compST">
+      <button class="stab on" data-c="tipo"   onclick="setCS(this)">Por Tipo</button>
+      <button class="stab"    data-c="port"   onclick="setCS(this)">Por Portafolio</button>
+      <button class="stab"    data-c="moneda" onclick="setCS(this)">Por Moneda</button>
+      <button class="stab"    data-c="vcto"   onclick="setCS(this)">Por Vencimiento</button>
     </div>
-
-    <!-- Barras horizontales -->
-    <div class="card" style="padding:16px">
-      <div class="ct" id="compBarTitle" style="margin-bottom:10px">Valor por categoría</div>
-      <div class="ch h260"><canvas id="cCompBar"></canvas></div>
-    </div>
-
-    <!-- Vencimientos bucket -->
-    <div class="card" style="padding:16px">
-      <div class="ct" style="margin-bottom:10px">Perfil de plazos</div>
-      <div class="ch h260"><canvas id="cVctoBucket"></canvas></div>
-    </div>
-
   </div>
 
-  <!-- ── TABLA MAESTRA INTERACTIVA (estilo Power BI) ─────────── -->
-  <div class="card" style="padding:0;border:2px solid var(--bd)">
-
-    <!-- Barra de control de la tabla -->
-    <div style="padding:12px 18px;border-bottom:1px solid var(--bd);display:flex;align-items:center;gap:10px;flex-wrap:wrap;background:var(--s2)">
-      <div class="ct" style="margin:0;flex-shrink:0">Posiciones</div>
-
-      <!-- Búsqueda -->
-      <div style="position:relative;flex:1;min-width:180px;max-width:260px">
-        <svg style="position:absolute;left:9px;top:50%;transform:translateY(-50%);width:13px;height:13px;stroke:var(--tx2);fill:none;stroke-width:2" viewBox="0 0 24 24"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
-        <input id="compQ" type="search" placeholder="Buscar especie, ISIN…" style="padding:6px 10px 6px 30px;width:100%;font-size:12px;border-radius:20px" oninput="_compTableRender()">
+  <!-- Donut + barra -->
+  <div class="g23">
+    <div class="card" style="display:flex;flex-direction:column;align-items:center;justify-content:center">
+      <div class="ct" id="compDonutTitle">Composición por Tipo de Activo</div>
+      <div class="donut-ch" style="width:240px;height:240px">
+        <canvas id="cCompDonut"></canvas>
+        <div class="donut-center">
+          <div class="dcv" id="compDonutVal">—</div>
+          <div class="dcl" id="compDonutLbl">Total</div>
+        </div>
       </div>
+    </div>
+    <div class="card">
+      <div class="ct" id="compBarTitle">Valor por categoría</div>
+      <div class="ch h300"><canvas id="cCompBar"></canvas></div>
+    </div>
+  </div>
 
-      <!-- Chips filtro rápido -->
+  <!-- Tabla resumen agrupado -->
+  <div class="card" style="padding:0">
+    <div style="padding:14px 18px 0">
+      <div class="ct" style="margin-bottom:0" id="compTableTitle">Detalle por tipo de activo</div>
+    </div>
+    <div class="twrap" style="max-height:300px">
+      <table><thead><tr id="compTableHead"></tr></thead>
+        <tbody id="compTableBody"></tbody>
+        <tfoot><tr id="compTableFoot"></tr></tfoot>
+      </table>
+    </div>
+  </div>
+
+  <!-- Cross + bucket -->
+  <div class="g2">
+    <div class="card">
+      <div class="ct">Exposición cruzada — Portafolio × Tipo</div>
+      <div style="overflow-x:auto" id="crossTable"></div>
+    </div>
+    <div class="card">
+      <div class="ct">Perfil de vencimientos por plazo</div>
+      <div style="font-size:10.5px;color:var(--tx2);margin-bottom:8px;display:flex;gap:12px;flex-wrap:wrap">
+        <span><span style="color:rgba(220,38,38,.9)">■</span> &lt;30d</span>
+        <span><span style="color:rgba(217,119,6,.9)">■</span> 30–90d</span>
+        <span><span style="color:rgba(245,158,11,.9)">■</span> 90–180d</span>
+        <span><span style="color:rgba(37,99,235,.9)">■</span> 180d–1a</span>
+        <span><span style="color:rgba(124,58,237,.9)">■</span> 1–2a</span>
+        <span><span style="color:rgba(16,185,129,.9)">■</span> 2–5a</span>
+        <span><span style="color:rgba(6,182,212,.9)">■</span> &gt;5a</span>
+      </div>
+      <div class="ch h300"><canvas id="cVctoBucket"></canvas></div>
+    </div>
+  </div>
+
+  <!-- ── TABLA DETALLE DE POSICIONES ─────────────────────────── -->
+  <div class="card" style="padding:0">
+    <div style="padding:12px 18px;border-bottom:1px solid var(--bd);display:flex;align-items:center;gap:10px;flex-wrap:wrap;background:var(--s2)">
+      <div class="ct" style="margin:0">Posiciones individuales</div>
+      <div style="position:relative;flex:1;min-width:160px;max-width:240px">
+        <svg style="position:absolute;left:9px;top:50%;transform:translateY(-50%);width:12px;height:12px;stroke:var(--tx2);fill:none;stroke-width:2" viewBox="0 0 24 24"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
+        <input id="compQ" type="search" placeholder="Buscar especie, ISIN…" style="padding:6px 10px 6px 28px;width:100%;font-size:12px;border-radius:20px" oninput="_compTableRender()">
+      </div>
       <div style="display:flex;gap:5px;flex-wrap:wrap">
         <button class="chip" data-cf="rf"     onclick="_compChip(this)">RF</button>
         <button class="chip" data-cf="fondos" onclick="_compChip(this)">Fondos</button>
@@ -962,50 +978,20 @@ tr.drill-row:hover td{background:rgba(0,133,74,.06)!important}
         <button class="chip" data-cf="vcto90" onclick="_compChip(this)">Vence &lt;90d</button>
         <button class="chip" data-cf="ext"    onclick="_compChip(this)">FX</button>
         <button class="chip" data-cf="neg"    onclick="_compChip(this)">P&amp;L neg.</button>
-        <button class="chip" data-cf="top10"  onclick="_compChip(this)">Top 10</button>
       </div>
-
-      <!-- Agrupar por -->
-      <div style="display:flex;align-items:center;gap:6px;margin-left:auto;flex-shrink:0">
-        <span style="font-size:11px;color:var(--tx2);white-space:nowrap">Agrupar:</span>
-        <select id="compGrp" onchange="_compTableRender()" style="font-size:11px;padding:5px 9px;border-radius:8px;min-width:100px">
-          <option value="">Sin agrupar</option>
-          <option value="tipo">Por tipo</option>
-          <option value="port">Por portafolio</option>
-          <option value="moneda">Por moneda</option>
-        </select>
-        <button onclick="_compClearSel()" class="btn-sm" style="font-size:11px;padding:5px 10px;white-space:nowrap" id="compClearBtn" title="Limpiar selección">✕ Limpiar</button>
-      </div>
+      <button onclick="_compClearSel()" class="btn-clear" style="margin-left:auto">✕ Limpiar</button>
     </div>
-
-    <!-- Tabla -->
-    <div style="overflow:auto;max-height:520px" id="compMasterTableWrap">
-      <table id="compMasterTable" style="width:100%">
+    <div class="twrap mh480">
+      <table style="width:100%">
         <thead id="compMasterHead"></thead>
         <tbody id="compMasterBody"></tbody>
         <tfoot id="compMasterFoot"></tfoot>
       </table>
     </div>
-
-    <!-- Footer: conteo + totales -->
-    <div style="padding:8px 18px;border-top:1px solid var(--bd);display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:8px;background:var(--s2)">
-      <div style="display:flex;gap:16px;font-size:11px;color:var(--tx2)">
-        <span id="compMasterCnt">— posiciones</span>
-        <span id="compSelInfo" style="color:var(--g);font-weight:600"></span>
-      </div>
-      <div style="display:flex;gap:16px;font-size:11.5px;font-family:var(--mono)">
-        <span>Total: <b id="compMasterTotal">—</b></span>
-        <span>P&amp;L: <b id="compMasterPL">—</b></span>
-        <span>% del portafolio: <b id="compMasterPct">—</b></span>
-      </div>
+    <div style="padding:8px 18px;border-top:1px solid var(--bd);font-size:11px;color:var(--tx2);display:flex;justify-content:space-between;background:var(--s2)">
+      <span id="compMasterCnt">—</span>
+      <span>Total: <b id="compMasterTotal" style="font-family:var(--mono)">—</b> &nbsp;·&nbsp; P&amp;L: <b id="compMasterPL" style="font-family:var(--mono)">—</b></span>
     </div>
-
-  </div>
-
-  <!-- ── FILA INFERIOR: cross portafolio×tipo ─────────────────── -->
-  <div class="card">
-    <div class="ct">Exposición cruzada — Portafolio × Tipo</div>
-    <div style="overflow-x:auto" id="crossTable"></div>
   </div>
 
 </div>
