@@ -872,11 +872,11 @@ tr.drill-row:hover td{background:rgba(0,133,74,.06)!important}
   <div class="g2">
     <div class="card">
       <div class="ct">Valor de mercado — últimos días</div>
-      <div class="ch h220"><canvas id="cGA"></canvas></div>
+      <div class="ch h300"><canvas id="cGA"></canvas></div>
     </div>
     <div class="card">
       <div class="ct">P&amp;L diario + acumulado</div>
-      <div class="ch h220"><canvas id="cGB"></canvas></div>
+      <div class="ch h300"><canvas id="cGB"></canvas></div>
     </div>
   </div>
 
@@ -945,7 +945,7 @@ tr.drill-row:hover td{background:rgba(0,133,74,.06)!important}
         <span><span style="color:rgba(16,185,129,.9)">■</span> 2–5a</span>
         <span><span style="color:rgba(6,182,212,.9)">■</span> &gt;5a</span>
       </div>
-      <div class="ch h240"><canvas id="cVctoBucket"></canvas></div>
+      <div class="ch h300"><canvas id="cVctoBucket"></canvas></div>
     </div>
   </div>
 
@@ -985,29 +985,33 @@ tr.drill-row:hover td{background:rgba(0,133,74,.06)!important}
     <div class="ct-row">
       <div class="ct" id="evolTitle">Valor de Mercado Total</div>
     </div>
-    <div class="ch h360"><canvas id="cEvol"></canvas></div>
+    <div class="ch h420"><canvas id="cEvol"></canvas></div>
   </div>
 
   <!-- Rentabilidad mensual + nominal vs mercado -->
   <div class="g2">
     <div class="card">
       <div class="ct">Rentabilidad mensual (P&amp;L por mes)</div>
-      <div class="ch h260"><canvas id="cRentMes"></canvas></div>
+      <div class="ch h300"><canvas id="cRentMes"></canvas></div>
     </div>
     <div class="card">
       <div class="ct">Nominal vs Mercado — evolución histórica</div>
-      <div class="ch h260"><canvas id="cNomMer"></canvas></div>
+      <div class="ch h300"><canvas id="cNomMer"></canvas></div>
     </div>
   </div>
 
   <!-- Tabla de cambios / movimientos del período -->
   <div class="card">
     <div class="ct">Movimientos en el período — variaciones y posiciones cerradas</div>
-    <div class="twrap mh320">
+    <div style="font-size:11px;color:var(--tx2);padding:8px 14px;background:var(--s2);border-radius:7px;margin-bottom:8px;line-height:1.7">
+      <b style="color:var(--tx)">Nota:</b> <b>Variación %</b> = cambio en el precio de mercado del instrumento entre el inicio y fin del período.
+      <b>P&L Total</b> = suma de causaciones diarias acumuladas (incluye devengado, FX y tasa). Pueden diferir porque el P&L captura flujos intermedios que no se reflejan en el precio.
+    </div>
+    <div class="twrap mh360">
       <table><thead><tr>
         <th>Especie</th><th>Portafolio</th><th>Tipo</th><th>Estado</th>
-        <th class="r">Valor Inicial</th><th class="r">Valor Final</th>
-        <th class="r">Variación %</th><th class="r">P&amp;L Total</th>
+        <th class="r">Precio Inicial</th><th class="r">Precio Final</th>
+        <th class="r">Var. Precio %</th><th class="r">P&L Acum. (causaciones)</th>
       </tr></thead>
       <tbody id="tCambios"></tbody></table>
     </div>
@@ -1037,26 +1041,26 @@ tr.drill-row:hover td{background:rgba(0,133,74,.06)!important}
   <div class="g2">
     <div class="card">
       <div class="ct">Evolución de causaciones — 4 componentes</div>
-      <div class="ch h280"><canvas id="cCausE"></canvas></div>
+      <div class="ch h320"><canvas id="cCausE"></canvas></div>
     </div>
     <div class="card">
       <div class="ct">Causación acumulada del período</div>
-      <div class="ch h280"><canvas id="cCausAc"></canvas></div>
+      <div class="ch h320"><canvas id="cCausAc"></canvas></div>
     </div>
   </div>
 
   <div class="g3">
     <div class="card">
       <div class="ct">Causación por portafolio</div>
-      <div class="ch h260"><canvas id="cCausP"></canvas></div>
+      <div class="ch h300"><canvas id="cCausP"></canvas></div>
     </div>
     <div class="card">
       <div class="ct">Causación por tipo de activo</div>
-      <div class="ch h260"><canvas id="cCausT"></canvas></div>
+      <div class="ch h300"><canvas id="cCausT"></canvas></div>
     </div>
     <div class="card">
       <div class="ct">Distribución de P&amp;L diario</div>
-      <div class="ch h260"><canvas id="cHistPL"></canvas></div>
+      <div class="ch h300"><canvas id="cHistPL"></canvas></div>
     </div>
   </div>
 
@@ -1109,11 +1113,11 @@ tr.drill-row:hover td{background:rgba(0,133,74,.06)!important}
   <div class="g2">
     <div class="card">
       <div class="ct">Calendario de vencimientos — todos los plazos</div>
-      <div class="ch h240"><canvas id="cVcto"></canvas></div>
+      <div class="ch h320"><canvas id="cVcto"></canvas></div>
     </div>
     <div class="card">
       <div class="ct">Evolución TIR histórica por instrumento</div>
-      <div class="ch h240"><canvas id="cTirH"></canvas></div>
+      <div class="ch h300"><canvas id="cTirH"></canvas></div>
     </div>
   </div>
 
@@ -1582,6 +1586,19 @@ tr.drill-row:hover td{background:rgba(0,133,74,.06)!important}
             <span class="bdg b-oth" onclick="_filterCfgByTipo('Otro')">Otro</span>
             <span class="bdg" style="background:var(--s3);color:var(--tx2)" onclick="_filterCfgRows('')">✕ Todos</span>
           </div>
+          <div id="customTiposBadges" style="display:flex;flex-wrap:wrap;gap:6px;margin-top:8px"></div>
+        </div>
+
+        <div class="cfg-section">
+          <div class="cfg-title">Crear nuevo tipo de activo personalizado</div>
+          <div class="cfg-info">
+            Agrega tipos propios como <b>ETF</b>, <b>Inmobiliario</b>, etc. Una vez creados, aparecen en los selectores de clasificación y puedes asignarlos a instrumentos.
+          </div>
+          <div style="display:flex;gap:8px;align-items:center;margin-bottom:8px">
+            <input id="newTipoInput" type="text" placeholder="Ej: ETF, Inmobiliario, Infraestructura..." style="flex:1;font-size:12px" onkeydown="if(event.key==='Enter')_addTipoCustom()">
+            <button onclick="_addTipoCustom()" class="btn-sm" style="color:var(--g);border-color:var(--g);flex-shrink:0">+ Crear tipo</button>
+          </div>
+          <div id="customTiposList" style="display:flex;flex-wrap:wrap;gap:6px"></div>
         </div>
       </div>
 

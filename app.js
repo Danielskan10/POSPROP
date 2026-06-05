@@ -433,10 +433,35 @@ function axO(yCb){
   };
 }
 function leg(pos='top'){
-  return{position:pos,labels:{
-    color:tx2(),font:{size:11.5},padding:14,
-    usePointStyle:true,pointStyleWidth:8
-  }};
+  return{
+    position:pos,
+    align:'center',
+    labels:{
+      color:tx2(),
+      font:{size:11.5,weight:'500'},
+      padding:20,
+      usePointStyle:true,
+      pointStyle:'circle',
+      pointStyleWidth:10,
+      boxHeight:8,
+    }
+  };
+}
+function legCompact(pos='top'){
+  return{
+    position:pos,
+    align:'start',
+    labels:{
+      color:tx2(),
+      font:{size:10.5,weight:'500'},
+      padding:14,
+      usePointStyle:true,
+      pointStyle:'circle',
+      pointStyleWidth:8,
+      boxHeight:7,
+      filter:(item)=>item.text&&item.text.trim()!=='',
+    }
+  };
 }
 function tipFull(prefix=''){
   return{
@@ -1706,11 +1731,29 @@ function exportCfgPython(){
 
 // renderCfgRows y addCfgRow (usados desde el nuevo modal)
 // Los tipos disponibles para clasificación
-const TIPOS_DISPONIBLES=['TES','Fondos','Liquidez','Derivados','AOR','TIDIS','CDT','Acciones','Titularizaciones','Otro'];
+const TIPOS_BASE=['TES','Fondos','Liquidez','Derivados','AOR','TIDIS','CDT','Acciones','Titularizaciones','Otro'];
+function getTiposDisponibles(){
+  try{
+    const custom=JSON.parse(localStorage.getItem('sk_tipos_custom')||'[]');
+    return [...new Set([...TIPOS_BASE,...custom])];
+  }catch{return TIPOS_BASE;}
+}
+function saveTipoCustom(nombre){
+  nombre=nombre.trim();
+  if(!nombre||TIPOS_BASE.includes(nombre))return false;
+  const custom=JSON.parse(localStorage.getItem('sk_tipos_custom')||'[]');
+  if(!custom.includes(nombre)){custom.push(nombre);localStorage.setItem('sk_tipos_custom',JSON.stringify(custom));}
+  return true;
+}
+function removeTipoCustom(nombre){
+  const custom=JSON.parse(localStorage.getItem('sk_tipos_custom')||'[]');
+  localStorage.setItem('sk_tipos_custom',JSON.stringify(custom.filter(t=>t!==nombre)));
+}
+const TIPOS_DISPONIBLES=getTiposDisponibles; // función, no array — llamar con TIPOS_DISPONIBLES()
 
 function _tipoSelect(selectedVal, dataAttr){
   var s='<select class="cfg-select" '+dataAttr+'>';
-  TIPOS_DISPONIBLES.forEach(function(t){
+  getTiposDisponibles().forEach(function(t){
     s+='<option value="'+t+'"'+(t===selectedVal?' selected':'')+'>'+t+'</option>';
   });
   s+='</select>';
@@ -1839,6 +1882,40 @@ function _filterCfgByTipo(tipo){
   if(cnt) cnt.textContent=visible+' de tipo '+tipo;
 }
 
+function _addTipoCustom(){
+  const inp=document.getElementById('newTipoInput');
+  if(!inp)return;
+  const nombre=inp.value.trim();
+  if(!nombre){inp.focus();return;}
+  if(!saveTipoCustom(nombre)){
+    inp.style.borderColor='var(--r)';
+    setTimeout(()=>{inp.style.borderColor='';},1200);
+    inp.placeholder='Ya existe o es un tipo base';
+    return;
+  }
+  inp.value='';
+  inp.placeholder='Ej: ETF, Inmobiliario, Infraestructura...';
+  _renderCustomTipos();
+  renderCfgRows(); // refrescar lista con nuevo tipo
+}
+
+function _renderCustomTipos(){
+  const custom=JSON.parse(localStorage.getItem('sk_tipos_custom')||'[]');
+  const list=document.getElementById('customTiposList');
+  const badges=document.getElementById('customTiposBadges');
+  if(list){
+    list.innerHTML=custom.length===0
+      ?'<span style="font-size:11px;color:var(--tx2)">Sin tipos personalizados aún.</span>'
+      :custom.map(t=>`<span style="display:inline-flex;align-items:center;gap:5px;padding:4px 10px;border-radius:12px;background:var(--g3);border:1px solid rgba(0,133,74,.25);font-size:11px;font-weight:600;color:var(--g)">
+        ${escHtml(t)}
+        <button onclick="removeTipoCustom('${escAttr(t)}');_renderCustomTipos();renderCfgRows();" style="color:var(--r);font-size:13px;padding:0 2px;border:none;background:none;cursor:pointer;line-height:1" title="Eliminar">×</button>
+      </span>`).join('');
+  }
+  if(badges){
+    badges.innerHTML=custom.map(t=>`<span class="bdg b-oth" onclick="_filterCfgByTipo('${escAttr(t)}')" style="cursor:pointer">${escHtml(t)}</span>`).join('');
+  }
+}
+
 function _showOnlyOtros(){
   // Mostrar todos los "Otro" del portafolio para reclasificar
   const currentMap=loadCfg();
@@ -1880,6 +1957,7 @@ function setCfgTab(el){
 
 function openCfg(){
   renderCfgRows();
+  _renderCustomTipos();
   renderPanelMapas();   // ← panel de mapas editables
 
   // Panel visual
