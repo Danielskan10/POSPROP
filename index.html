@@ -875,9 +875,23 @@ tr.drill-row:hover td{background:rgba(0,133,74,.06)!important}
       <div class="ch h300"><canvas id="cGA"></canvas></div>
     </div>
     <div class="card">
-      <div class="ct">P&amp;L diario + acumulado</div>
+      <div class="ct-row">
+        <div class="ct">P&amp;L diario + acumulado</div>
+        <span style="font-size:11px;color:var(--tx2)">Click en una barra para ver el detalle del día</span>
+      </div>
       <div class="ch h300"><canvas id="cGB"></canvas></div>
+      <!-- Panel días atípicos -->
+      <div id="atipicoPanel" style="display:none;margin-top:14px;padding:14px 16px;background:var(--s2);border-radius:10px;border:1px solid var(--bd);animation:slideDown .2s ease"></div>
     </div>
+  </div>
+
+  <!-- Rentabilidades EA por portafolio -->
+  <div class="card">
+    <div class="ct-row">
+      <div class="ct">Rentabilidades Efectivas Anuales (EA) — por portafolio y período</div>
+      <span style="font-size:11px;color:var(--tx2)" id="eaPeriodo">—</span>
+    </div>
+    <div id="eaTable" style="overflow-x:auto"></div>
   </div>
 
 </div>
@@ -946,6 +960,32 @@ tr.drill-row:hover td{background:rgba(0,133,74,.06)!important}
         <span><span style="color:rgba(6,182,212,.9)">■</span> &gt;5a</span>
       </div>
       <div class="ch h300"><canvas id="cVctoBucket"></canvas></div>
+    </div>
+  </div>
+
+  <!-- Tabla completa de posiciones con vencimientos -->
+  <div class="card" style="padding:0">
+    <div style="padding:14px 18px 0;display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:10px">
+      <div class="ct" style="margin-bottom:0">Detalle de posiciones — vencimientos, TIR y causaciones</div>
+      <div style="display:flex;gap:6px;flex-wrap:wrap">
+        <button class="chip" data-vc="vcto30"  onclick="toggleChip(this,'vc')">Vence &lt;30d</button>
+        <button class="chip" data-vc="vcto90"  onclick="toggleChip(this,'vc')">Vence &lt;90d</button>
+        <button class="chip" data-vc="vcto365" onclick="toggleChip(this,'vc')">Vence &lt;1a</button>
+        <button class="chip" data-vc="rf"      onclick="toggleChip(this,'vc')">Solo RF</button>
+        <button class="chip" data-vc="ext"     onclick="toggleChip(this,'vc')">Moneda Ext.</button>
+        <button class="chip" data-vc="neg"     onclick="toggleChip(this,'vc')">P&amp;L neg.</button>
+      </div>
+    </div>
+    <div class="twrap mh480" id="compVctoTable">
+      <table>
+        <thead><tr id="compVctoHead"></tr></thead>
+        <tbody id="compVctoBody"></tbody>
+        <tfoot><tr id="compVctoFoot"></tr></tfoot>
+      </table>
+    </div>
+    <div style="padding:8px 18px;border-top:1px solid var(--bd);font-size:11px;color:var(--tx2);display:flex;justify-content:space-between">
+      <span id="compVctoCnt">—</span>
+      <span id="compVctoTotal">—</span>
     </div>
   </div>
 

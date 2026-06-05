@@ -642,10 +642,184 @@ function initResumen(){
       backgroundColor:ev.pl.map(v=>v>=0?'rgba(0,200,110,.75)':'rgba(239,68,68,.75)'),borderRadius:4,borderSkipped:false,barPercentage:.75},
     {label:'P&L Acumulado',data:ev.pl_acum,yAxisID:'y2',type:'line',
       borderColor:'#a78bfa',backgroundColor:'transparent',tension:.4,pointRadius:0,borderWidth:2.5}
-  ]},options:{...CHART_DEFAULTS,plugins:{legend:leg('top'),tooltip:tipBI()},
+  ]},options:{...CHART_DEFAULTS,
+    onClick:(e,els)=>{ if(els.length) _showDiaAtipicoPanel(ev.fechas[els[0].index], ev.pl[els[0].index], ev); },
+    plugins:{legend:leg('top'),tooltip:tipBI()},
     scales:{x:{ticks:{color:tx2(),font:{size:10.5}},grid:{color:gc(),drawBorder:false}},
       y:{ticks:{color:tx2(),font:{size:10.5},callback:v=>fmt(v)},grid:{color:gc(),drawBorder:false}},
       y2:{position:'right',ticks:{color:'rgba(167,139,250,.7)',font:{size:10.5},callback:v=>fmt(v)},grid:{display:false}}}}});
+
+  // Rentabilidades EA
+  _buildEATable(ev);
+}
+
+function _showDiaAtipicoPanel(fecha, plDia, ev){
+  const panel=document.getElementById('atipicoPanel');
+  if(!panel) return;
+  // Encontrar top contribuyentes de ese día
+  const fi=D.fechas.indexOf(fecha);
+  if(fi<0){ panel.style.display='none'; return; }
+  // Buscar en cada especie cuánto aportó ese día
+  const contribs=[];
+  Object.entries(D.esp_hist).forEach(([esp,h])=>{
+    const idx=h.fechas.indexOf(fecha);
+    if(idx<0) return;
+    const pl=h.pl?.[idx]||0;
+    if(Math.abs(pl)>0) contribs.push({esp,pl,tipo:h.tipo||'—',port:h.port||'—'});
+  });
+  contribs.sort((a,b)=>Math.abs(b.pl)-Math.abs(a.pl));
+  const top=contribs.slice(0,8);
+
+  // Calcular stats del día vs promedio
+  const pl=ev.pl.filter(v=>v!=null);
+  const avg=pl.reduce((a,v)=>a+v,0)/pl.length;
+  const std=Math.sqrt(pl.reduce((a,v)=>a+Math.pow(v-avg,2),0)/(pl.length-1));
+  const zscore=std>0?(plDia-avg)/std:0;
+  const pctRank=pl.filter(v=>v<plDia).length/pl.length*100;
+
+  const isGood=plDia>=0;
+  const col=isGood?'var(--g)':'var(--r)';
+  const zLabel=Math.abs(zscore)>2?'⚠️ Día muy atípico':Math.abs(zscore)>1?'Día inusual':'Día normal';
+
+  let html=`<div style="display:flex;align-items:center;gap:16px;flex-wrap:wrap;margin-bottom:12px">
+    <div>
+      <div style="font-size:11px;color:var(--tx2);margin-bottom:2px">📅 ${fecha}</div>
+      <div style="font-size:20px;font-weight:800;color:${col};font-family:var(--mono)">${sgn(plDia)+fC(plDia)}</div>
+    </div>
+    <div style="display:flex;gap:10px;flex-wrap:wrap">
+      <div style="padding:6px 12px;background:var(--s1);border-radius:8px;border:1px solid var(--bd);font-size:11px">
+        <div style="color:var(--tx2)">Z-score</div>
+        <div style="font-weight:700;font-family:var(--mono);color:${Math.abs(zscore)>2?'var(--r)':'var(--tx)'}">${zscore.toFixed(2)}σ — ${zLabel}</div>
+      </div>
+      <div style="padding:6px 12px;background:var(--s1);border-radius:8px;border:1px solid var(--bd);font-size:11px">
+        <div style="color:var(--tx2)">Percentil</div>
+        <div style="font-weight:700;font-family:var(--mono)">${pctRank.toFixed(0)}° de ${pl.length} días</div>
+      </div>
+      <div style="padding:6px 12px;background:var(--s1);border-radius:8px;border:1px solid var(--bd);font-size:11px">
+        <div style="color:var(--tx2)">vs Promedio</div>
+        <div style="font-weight:700;font-family:var(--mono);color:${(plDia-avg)>=0?'var(--g)':'var(--r)'}">${sgn(plDia-avg)+fC(plDia-avg)}</div>
+      </div>
+    </div>
+    <button onclick="document.getElementById('atipicoPanel').style.display='none'" style="margin-left:auto;padding:4px 10px;border-radius:6px;font-size:12px;border:1px solid var(--bd);color:var(--tx2);background:var(--s1);cursor:pointer">✕</button>
+  </div>`;
+
+  if(top.length){
+    html+=`<div style="font-size:11px;font-weight:700;color:var(--tx2);text-transform:uppercase;letter-spacing:.6px;margin-bottom:8px">Top contribuyentes al P&L del día</div>`;
+    html+=`<div style="display:flex;flex-direction:column;gap:4px">`;
+    top.forEach(c=>{
+      const pct=plDia?c.pl/Math.abs(plDia)*100:0;
+      const barW=Math.min(Math.abs(pct),100);
+      const barCol=c.pl>=0?'var(--g)':'var(--r)';
+      html+=`<div style="display:flex;align-items:center;gap:10px;padding:6px 10px;background:var(--s1);border-radius:7px;border:1px solid var(--bd)">
+        <div style="flex:1;min-width:0">
+          <div style="font-size:11.5px;font-weight:600;overflow:hidden;text-overflow:ellipsis;white-space:nowrap" title="${escAttr(c.esp)}">${c.esp.length>32?c.esp.slice(0,32)+'…':escHtml(c.esp)}</div>
+          <div style="font-size:10px;color:var(--tx2)">${escHtml(c.port)} · ${escHtml(c.tipo)}</div>
+        </div>
+        <div style="width:80px;height:5px;background:var(--s3);border-radius:3px;overflow:hidden;flex-shrink:0">
+          <div style="height:100%;width:${barW}%;background:${barCol};border-radius:3px"></div>
+        </div>
+        <div style="font-family:var(--mono);font-size:11.5px;font-weight:700;color:${barCol};width:90px;text-align:right;flex-shrink:0">${sgn(c.pl)+fC(c.pl)}</div>
+        <div style="font-size:10.5px;color:var(--tx2);width:45px;text-align:right;flex-shrink:0">${pct.toFixed(1)}%</div>
+      </div>`;
+    });
+    html+=`</div>`;
+  } else {
+    html+=`<div style="font-size:12px;color:var(--tx2)">No hay detalle por especie disponible para este día.</div>`;
+  }
+
+  panel.innerHTML=html;
+  panel.style.display='block';
+}
+
+function _buildEATable(ev){
+  const cont=document.getElementById('eaTable');
+  const lbl=document.getElementById('eaPeriodo');
+  if(!cont) return;
+
+  // Calcular EA = (1 + rendimiento_total)^(252/días) - 1
+  // Para cada portafolio y para el total
+  const fechas=ev.fechas;
+  const dias=fechas.length;
+  if(!dias){ cont.innerHTML='<div style="padding:16px;color:var(--tx2)">Sin datos en el período.</div>'; return; }
+
+  if(lbl) lbl.textContent=`${fechas[0]} → ${fechas[fechas.length-1]} · ${dias} días hábiles`;
+
+  const calcEA=(plArr,totalArr)=>{
+    const plAcum=plArr.reduce((a,v)=>a+(v||0),0);
+    const v0=totalArr.find(v=>v&&v>0)||0;
+    const vN=totalArr[totalArr.length-1]||0;
+    if(!v0||!vN) return null;
+    const rendTotal=plAcum/v0;
+    return Math.pow(1+rendTotal, 252/dias)-1;
+  };
+
+  // Portafolios disponibles
+  const ports=S.f.port?[S.f.port]:D.ports;
+  const rows=[];
+
+  // Total
+  const eaTotal=calcEA(ev.pl,ev.total);
+  rows.push({label:'TOTAL', ea:eaTotal, plAcum:ev.pl.reduce((a,v)=>a+(v||0),0), isTotal:true});
+
+  // Por portafolio
+  ports.forEach(p=>{
+    const ep=D.evol_port[p]; if(!ep) return;
+    const plArr=fechas.map(f=>{const gi=D.fechas.indexOf(f);return gi>=0?(ep.pl[gi]||0):0;});
+    const totArr=fechas.map(f=>{const gi=D.fechas.indexOf(f);return gi>=0?(ep.total[gi]||0):0;});
+    const ea=calcEA(plArr,totArr);
+    const plAcum=plArr.reduce((a,v)=>a+v,0);
+    rows.push({label:p, ea, plAcum, isTotal:false});
+  });
+
+  // Subperíodos estándar (si hay datos suficientes)
+  const subPeriodos=[
+    {label:'Último mes',   dias:21},
+    {label:'Últimos 3m',   dias:63},
+    {label:'Últimos 6m',   dias:126},
+    {label:'En el año',    dias:null}, // usa todo FF()
+  ];
+
+  // Calcular EA por subperíodo para el portafolio/total seleccionado
+  const subRows=subPeriodos.map(sp=>{
+    const n=sp.dias||dias;
+    const fSlice=fechas.slice(-Math.min(n,dias));
+    const idxs=fSlice.map(f=>D.fechas.indexOf(f));
+    const getEAport=p=>{
+      const ep=p?D.evol_port[p]:null;
+      const plArr=idxs.map(i=>i>=0?(ep?ep.pl[i]:D.evol?.pl?.[i])||0:0);
+      const totArr=idxs.map(i=>i>=0?(ep?ep.total[i]:D.evol?.total?.[i])||0:0);
+      return calcEA(plArr,totArr);
+    };
+    const eaT=getEAport(null);
+    const portEAs=ports.reduce((obj,p)=>{obj[p]=getEAport(p);return obj;},{});
+    return {label:sp.label, eaTotal:eaT, portEAs, ndias:fSlice.length};
+  });
+
+  // Render tabla
+  let html=`<table style="width:100%;border-collapse:collapse;font-size:12px">
+    <thead><tr style="background:var(--s2)">
+      <th style="padding:9px 14px;text-align:left;font-size:10px;text-transform:uppercase;letter-spacing:.5px;color:var(--tx2);border-bottom:1px solid var(--bd)">Portafolio / Período</th>
+      <th style="padding:9px 14px;text-align:right;font-size:10px;text-transform:uppercase;letter-spacing:.5px;color:var(--tx2);border-bottom:1px solid var(--bd)">EA Período Seleccionado</th>
+      <th style="padding:9px 14px;text-align:right;font-size:10px;text-transform:uppercase;letter-spacing:.5px;color:var(--tx2);border-bottom:1px solid var(--bd)">P&L Acumulado</th>
+      ${subPeriodos.map(s=>`<th style="padding:9px 14px;text-align:right;font-size:10px;text-transform:uppercase;letter-spacing:.5px;color:var(--tx2);border-bottom:1px solid var(--bd)">${s.label}</th>`).join('')}
+    </tr></thead><tbody>`;
+
+  rows.forEach(r=>{
+    const eaFmt=v=>v==null?'—':`<span style="font-weight:700;font-family:var(--mono);color:${v>=0?'var(--g)':'var(--r)'}">${v>=0?'+':''}${(v*100).toFixed(2)}%</span>`;
+    const isT=r.isTotal;
+    const portEAcols=subRows.map(sp=>{
+      const v=isT?sp.eaTotal:(sp.portEAs?.[r.label]||null);
+      return `<td style="padding:8px 14px;text-align:right;border-bottom:1px solid var(--bd)">${eaFmt(v)}</td>`;
+    }).join('');
+    html+=`<tr style="${isT?'background:var(--g4);font-weight:700':''}">
+      <td style="padding:8px 14px;border-bottom:1px solid var(--bd);font-weight:${isT?700:500}">${isT?'<b>'+r.label+'</b>':r.label}</td>
+      <td style="padding:8px 14px;text-align:right;border-bottom:1px solid var(--bd)">${eaFmt(r.ea)}</td>
+      <td style="padding:8px 14px;text-align:right;border-bottom:1px solid var(--bd);font-family:var(--mono);color:${r.plAcum>=0?'var(--g)':'var(--r)'}">${sgn(r.plAcum)+fC(r.plAcum)}</td>
+      ${portEAcols}
+    </tr>`;
+  });
+  html+=`</tbody></table>`;
+  cont.innerHTML=html;
 }
 
 // ════════════════════════════════════════════════════════════
@@ -795,7 +969,84 @@ function _renderComp(){
   _buildCrossTable();
   // Buckets de vencimiento (siempre visible)
   _buildVctoBucket();
+  // Tabla detalle de posiciones
+  _buildCompVctoTable();
 }
+
+// ─── Chips de la tabla de composición ─────────────────────────
+const _vcChips = new Set();
+function toggleChip(btn, ns){
+  if(ns==='vc'){
+    btn.classList.toggle('on');
+    const k=btn.dataset.vc;
+    if(_vcChips.has(k)) _vcChips.delete(k); else _vcChips.add(k);
+    _buildCompVctoTable();
+  }
+}
+
+function _buildCompVctoTable(){
+  let rows = FD();
+  // Aplicar chips
+  if(_vcChips.has('vcto30'))  rows=rows.filter(r=>r.dias_vcto>0&&r.dias_vcto<=30);
+  if(_vcChips.has('vcto90'))  rows=rows.filter(r=>r.dias_vcto>0&&r.dias_vcto<=90);
+  if(_vcChips.has('vcto365')) rows=rows.filter(r=>r.dias_vcto>0&&r.dias_vcto<=365);
+  if(_vcChips.has('rf'))      rows=rows.filter(r=>['TES','TIDIS','CDT','Titularizaciones'].includes(r.tipo));
+  if(_vcChips.has('ext'))     rows=rows.filter(r=>r.ext);
+  if(_vcChips.has('neg'))     rows=rows.filter(r=>(r.pl||0)<0);
+
+  const st=_mkTableSort('compVcto'); if(!st.k) st.k='valor';
+  const sorted=_sortRows(rows,st,'valor');
+
+  const H=(label,col,cls='')=>_thSort(label,'compVcto',col,cls);
+  const head=`<tr>${H('Especie','esp')}${H('Portafolio','port')}${H('Tipo','tipo')}${H('Moneda','moneda')}
+    ${H('Nominal','nominal','r')}${H('Valor Mdo','valor','r')}${H('P&L','pl','r')}${H('Caus Mer','caus_mer','r')}
+    ${H('Caus TIR','caus_tir','r')}${H('Caus FX','caus_mon','r')}${H('TIR%','tir','r')}
+    ${H('Precio','precio','r')}${H('Vencimiento','vcto','')}${H('Días','dias_vcto','r')}${H('Estado','est','')}</tr>`;
+
+  let body='';
+  sorted.forEach(r=>{
+    const dv=r.dias_vcto;
+    const dvStyle=dv>0&&dv<=30?'color:var(--r);font-weight:700':dv>0&&dv<=90?'color:var(--y);font-weight:600':'';
+    body+=`<tr class="drill-row" onclick="drillDown('compVctoTable','esp','${escAttr(r.esp)}','Especie')">
+      <td class="main" title="${escAttr(r.esp)}">${r.esp.length>30?r.esp.slice(0,30)+'…':escHtml(r.esp)}</td>
+      <td>${escHtml(r.port||'—')}</td>
+      <td>${bdg(r.tipo)}</td>
+      <td class="mono">${escHtml(r.moneda||'—')}</td>
+      <td class="r">${fC(r.nominal)}</td>
+      <td class="r" style="font-weight:600">${fC(r.valor)}</td>
+      <td class="${clr(r.pl)}">${r.pl!=null?sgn(r.pl)+fC(r.pl):'—'}</td>
+      <td class="${clr(r.caus_mer)}">${fC(r.caus_mer)}</td>
+      <td class="${clr(r.caus_tir)}">${fC(r.caus_tir)}</td>
+      <td class="${clr(r.caus_mon)}">${fC(r.caus_mon)}</td>
+      <td class="r" style="color:var(--b)">${r.tir>0.0001?fP(r.tir*100):'—'}</td>
+      <td class="r mono">${r.precio!=null?r.precio.toFixed(4):'—'}</td>
+      <td style="font-size:11px;${dvStyle}">${r.vcto||'—'}</td>
+      <td class="r" style="${dvStyle}">${dv>0?dv:'—'}</td>
+      <td>${estC(r.est)}</td>
+    </tr>`;
+  });
+
+  const ttl=sorted.reduce((a,r)=>a+(r.valor||0),0);
+  const sumPl=sorted.reduce((a,r)=>a+(r.pl||0),0);
+  const foot=`<td colspan="5">TOTAL (${sorted.length})</td><td class="r">${fC(ttl)}</td>
+    <td class="${clr(sumPl)}">${sgn(sumPl)+fC(sumPl)}</td><td colspan="8"></td>`;
+
+  const headEl=document.getElementById('compVctoHead');
+  const bodyEl=document.getElementById('compVctoBody');
+  const footEl=document.getElementById('compVctoFoot');
+  if(headEl) headEl.innerHTML=head;
+  if(bodyEl) bodyEl.innerHTML=body;
+  if(footEl) footEl.innerHTML=foot;
+
+  const cnt=document.getElementById('compVctoCnt');
+  const tot=document.getElementById('compVctoTotal');
+  if(cnt) cnt.textContent=sorted.length+' posiciones';
+  if(tot) tot.textContent='Total: '+fC(ttl);
+
+  // registrar re-render para sort
+  window['_lastRender_compVcto']=_buildCompVctoTable;
+}
+
 
 function _buildCrossTable(){
   const cross=D.extras?.cross||{};
@@ -892,23 +1143,40 @@ function initEvolucion(){
 
   RE();  // renderiza la gráfica evolutiva
 
-  // Rentabilidad mensual
-  const rm=D.extras?.rent_mensual||{};
-  const rmKeys=Object.keys(rm).sort();
-  const rmVals=rmKeys.map(k=>rm[k]);
+  // Rentabilidad mensual — filtra por portafolio si está seleccionado
+  let rmKeys, rmVals;
+  if(S.f.port && D.evol_port[S.f.port]){
+    // Calcular P&L mensual desde la serie del portafolio filtrado
+    const ep=D.evol_port[S.f.port];
+    const mesMap={};
+    FF().forEach(f=>{
+      const gi=D.fechas.indexOf(f);
+      if(gi<0) return;
+      const mes=f.slice(0,7);
+      mesMap[mes]=(mesMap[mes]||0)+(ep.pl[gi]||0);
+    });
+    rmKeys=Object.keys(mesMap).sort();
+    rmVals=rmKeys.map(k=>mesMap[k]);
+  } else {
+    const rm=D.extras?.rent_mensual||{};
+    rmKeys=Object.keys(rm).sort();
+    rmVals=rmKeys.map(k=>rm[k]);
+  }
   mkC('cRentMes',{type:'bar',data:{labels:rmKeys.map(k=>k.slice(2)),datasets:[{
-    label:'P&L mensual',data:rmVals,
+    label:'P&L mensual'+(S.f.port?' · '+S.f.port:''),data:rmVals,
     backgroundColor:rmVals.map(v=>v>=0?'rgba(0,200,110,.8)':'rgba(239,68,68,.8)'),
     borderRadius:5,borderSkipped:false,barPercentage:.7
   }]},options:{...CHART_DEFAULTS,plugins:{legend:{display:false},tooltip:tipBI()},scales:axO()}});
 
-  // Nominal vs Mercado
-  const ne=D.extras?.nom_evol||{};
+  // Nominal vs Mercado — usa datos del portafolio filtrado si hay selección
+  const nomData = S.f.port && D.evol_port[S.f.port]
+    ? FF().map(f=>{const gi=D.fechas.indexOf(f);return gi>=0?(D.evol_port[S.f.port].nominal?.[gi]||null):null;})
+    : (D.extras?.nom_evol?.nominal||[]);
   mkC('cNomMer',{type:'line',data:{labels:dateL(ev.fechas),datasets:[
-    {label:'Mercado',data:ev.total,borderColor:'#00c96e',
+    {label:'Mercado'+(S.f.port?' · '+S.f.port:''),data:ev.total,borderColor:'#00c96e',
       backgroundColor:(ctx)=>{const g=ctx.chart.ctx.createLinearGradient(0,0,0,ctx.chart.height||260);g.addColorStop(0,'rgba(0,200,110,.2)');g.addColorStop(1,'rgba(0,200,110,0)');return g;},
       fill:true,tension:.4,pointRadius:0,pointHoverRadius:5,borderWidth:2.5},
-    {label:'Nominal',data:ne.nominal||[],borderColor:'rgba(96,165,250,.7)',
+    {label:'Nominal',data:nomData,borderColor:'rgba(96,165,250,.7)',
       backgroundColor:'transparent',tension:.4,pointRadius:0,borderWidth:1.5,borderDash:[5,3]},
   ]},options:{...CHART_DEFAULTS,plugins:{legend:leg('top'),tooltip:tipBI()},scales:axO()}});
 
@@ -943,12 +1211,12 @@ function _thSort(label,stKey,col,cls){
 function _tblSort(stKey,col){
   const st=_mkTableSort(stKey);
   if((st.k||col)===col) st.d*=-1; else{st.k=col;st.d=-1;}
-  // Re-renderizar la tabla correspondiente
   const renderMap={
-    caus:  function(){_renderCausTable(FD());},
-    rf:    function(){_renderRFTable(FD().filter(function(r){return ['TES','TIDIS','CDT','Titularizaciones'].includes(r.tipo);}));},
-    cambios: function(){_renderCambiosTable();},
-    detalle: function(){renderDetalle();}
+    caus:      function(){_renderCausTable(FD());},
+    rf:        function(){_renderRFTable(FD().filter(function(r){return ['TES','TIDIS','CDT','Titularizaciones'].includes(r.tipo);}));},
+    cambios:   function(){_renderCambiosTable();},
+    detalle:   function(){renderDetalle();},
+    compVcto:  function(){_buildCompVctoTable();}
   };
   if(renderMap[stKey]) renderMap[stKey]();
 }
